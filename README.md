@@ -92,6 +92,14 @@ ssh -L 8501:127.0.0.1:8501 root@SEU_IP
 
 Enquanto a janela SSH estiver aberta, acesse `http://localhost:8501`. O painel nao fica exposto diretamente na internet.
 
+Para manter o frontend ativo apos reiniciar o VPS:
+
+```bash
+install -m 644 analisador-exames.service /etc/systemd/system/analisador-exames.service
+systemctl daemon-reload
+systemctl enable --now analisador-exames.service
+```
+
 ## Limites
 
 PDFs digitalizados como imagem podem exigir OCR. Intervalos de referencia variam por laboratorio, idade, sexo e contexto. Confirme qualquer achado no documento original e com o profissional assistente.
