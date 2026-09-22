@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+*.pem
+*.key
+*.json.enc
+
+# Dados medicos e exportacoes
+*.pdf
+*.dcm
+*.dicom
+*.zip
+*.7z
+*.csv
+resultado/
+dados/
+exames/
+laudos/
+imagens/
+entrada/
