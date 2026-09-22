@@ -5,6 +5,7 @@ umask 077
 BASE_DIR="${ANALISADOR_BASE_DIR:-/srv/saude/processamento}"
 REMOTE_SOURCE="${ANALISADOR_REMOTE_SOURCE:-saude-crypt:exames/Exames_Unimed_2023-2026.zip}"
 REMOTE_OUTPUT="${ANALISADOR_REMOTE_OUTPUT:-saude-crypt:historico/ultima-analise}"
+LOCAL_PANEL_DIR="${ANALISADOR_PANEL_DIR:-/srv/saude/painel}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RUN_DIR="$(mktemp -d "$BASE_DIR.XXXXXX")"
 
@@ -29,4 +30,8 @@ fi
 rclone copy "$RUN_DIR/resultado" "$REMOTE_OUTPUT" --create-empty-src-dirs
 rclone check "$RUN_DIR/resultado" "$REMOTE_OUTPUT" --one-way --download
 
-echo "Analise concluida e enviada para $REMOTE_OUTPUT"
+install -d -m 700 "$LOCAL_PANEL_DIR"
+cp -f "$RUN_DIR/resultado"/* "$LOCAL_PANEL_DIR"/
+chmod 600 "$LOCAL_PANEL_DIR"/*
+
+echo "Analise concluida, enviada para $REMOTE_OUTPUT e disponibilizada em $LOCAL_PANEL_DIR"
