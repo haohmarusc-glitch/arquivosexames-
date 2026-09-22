@@ -1,0 +1,19 @@
+[Unit]
+Description=Painel privado do analisador de exames
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/analisador-exames
+Environment=ANALISADOR_RESULT_DIR=/srv/saude/painel
+ExecStart=/opt/analisador-exames/iniciar_frontend.sh
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
