@@ -88,6 +88,8 @@ MARCADORES: list[tuple[str, str, str, tuple[str, ...]]] = [
     # do hemograma, senao pontos /mL ou /campo caem na serie de sangue.
     # Bacterioscopia (Gram): contagem por campo (0 a ++++), nao por mL
     ("urina_gram_leucocitos", "Leucócitos polimorfonucleares (Gram)", "rins", (r"polimorfonuclea",)),
+    # "Pesquisa de leucocitos" (urina de 1o jato) e outro exame que o sedimento do EAS
+    ("urina_pesquisa_leucocitos", "Pesquisa de leucócitos (urina 1º jato)", "rins", (r"pesquisa\s+de\s+leucocitos",)),
     ("urina_leucocitos", "Leucócitos (urina)", "rins", (r"(?:urina|\beas\b|sediment|urocultura).*leucocitos",)),
     ("urina_hemacias", "Hemácias (urina)", "rins", (r"(?:urina|\beas\b|sediment|urocultura).*(?:hemacias|eritrocitos)",)),
     # Urina tipo I (EAS)
@@ -97,15 +99,16 @@ MARCADORES: list[tuple[str, str, str, tuple[str, ...]]] = [
     ("urina_celulas_epiteliais", "Células epiteliais (urina)", "rins", (r"celulas\s+epiteliais",)),
     ("urina_tipo1", "Urina tipo I", "rins", (r"urina\s+tipo", r"^eas$", r"sumario\s+de\s+urina")),
     # Coagulacao (tempo de protrombina) — fatores produzidos pelo figado
+    # TTPA antes do TP: "razao paciente" e "tempo paciente" existem nos dois
+    ("ttpa_paciente", "TTPA: tempo do paciente", "figado", (r"ttpa.*tempo\s+(?:do\s+)?paciente",)),
+    ("ttpa_normal", "TTPA: tempo de controle", "figado", (r"ttpa.*tempo\s+(?:normal|controle)",)),
+    ("ttpa_razao", "TTPA: razão paciente/normal", "figado", (r"ttpa.*(?:razao|relacao)",)),
+    ("ttpa", "TTPA", "figado", (r"\bttpa\b", r"tromboplastina\s+parcial", r"\b[ak]ptt\b")),
     ("tp_rni", "RNI (tempo de protrombina)", "figado", (r"^rni$", r"^inr$", r"\brni\b")),
     ("tp_paciente", "Coagulação: tempo do paciente", "figado", (r"^tempo\s+(?:do\s+)?paciente",)),
     ("tp_normal", "Coagulação: tempo de controle", "figado", (r"^tempo\s+(?:normal|controle)",)),
     ("tp_razao", "Coagulação: razão paciente/normal", "figado", (r"razao\s+paciente",)),
     ("tp_atividade", "Atividade de protrombina", "figado", (r"atividade\s+(?:de\s+)?protrombina",)),
-    ("ttpa_paciente", "TTPA: tempo do paciente", "figado", (r"ttpa.*tempo\s+(?:do\s+)?paciente",)),
-    ("ttpa_normal", "TTPA: tempo de controle", "figado", (r"ttpa.*tempo\s+(?:normal|controle)",)),
-    ("ttpa_razao", "TTPA: razão paciente/normal", "figado", (r"ttpa.*(?:razao|relacao)",)),
-    ("ttpa", "TTPA", "figado", (r"\bttpa\b", r"tromboplastina\s+parcial")),
     ("anti_hbs", "Anti-HBs (imunidade hepatite B)", "figado", (r"anti[\s-]*hbs",)),
     ("hbsag", "HBsAg (hepatite B)", "figado", (r"\bhbsag\b",)),
     ("anti_hcv", "Anti-HCV (hepatite C)", "figado", (r"anti[\s-]*hcv",)),

@@ -873,3 +873,44 @@ class UrinaLayoutRealTests(unittest.TestCase):
         ])
         self.assertEqual([r["valor_numerico"] for r in rs if r["grafico"]], [15.5])
         self.assertEqual(conf[0]["escolhido"], 15.5)
+
+
+class CoagulogramaTests(unittest.TestCase):
+    """COAGULOGRAMA com TAP e KPTT no mesmo bloco (laudo real de 2026)."""
+
+    TEXTO = (
+        "COAGULOGRAMA\n \nMaterial:\nSangue total com EDTA e plasma com\ncitrato\nColeta:\n08/04/2026 - 11:55:16\n"
+        "Valor de referência:\nTEMPO DE PROTROMBINA (TAP)\n \nTempo paciente.......:\n13,3\n \nsegundos\n11,7 a 15,3 segundos\n \n"
+        "RNI..................:\n1,00\n \n \nAté 1,2\n \n"
+        "|                     INDICAÇÃO\n         | RNI |            |\n"
+        "TEMPO DE TROMBOPLASTINA PARCIAL ATIVADO (KPTT)\n \nTempo paciente.......:\n29,3\n \nsegundos\n25,0 a 36,0 segundos\n \n"
+        "Tempo normal.........:\n33,5\n \nsegundos\n \n \nRazão paciente/normal:\n0,87\n \n \nRazão paciente/normal até 1,30\n \n"
+        "Contagem de plaquetas:\n201.000\n \n/mm3\n150.000 a 450.000 /mm3\n"
+    )
+
+    def test_tap_e_kptt_separados(self):
+        res = {r.exame_id: r for r in A.extract_results(Path("c.pdf"), self.TEXTO, None)}
+        self.assertEqual(res["tp_paciente"].valor_numerico, 13.3)
+        self.assertEqual(res["ttpa_paciente"].valor_numerico, 29.3)
+        self.assertEqual(res["ttpa_normal"].valor_numerico, 33.5)
+        self.assertEqual(res["ttpa_razao"].valor_numerico, 0.87)
+        self.assertEqual(res["tp_rni"].valor_numerico, 1.0)
+        self.assertEqual(res["plaquetas"].valor_numerico, 201000.0)
+        self.assertEqual(res["tp_paciente"].unidade, "segundos")
+        self.assertEqual(res["tp_rni"].unidade, "")  # "Até 1,2" nao e unidade
+        self.assertNotIn("tp_razao", res)
+
+
+class PesquisaLeucocitosTests(unittest.TestCase):
+    TEXTO = ("PESQUISA DE LEUCÓCITOS\n \nMaterial:\nUrina primeiro jato\nColeta:\n24/09/2025 - 09:39:56\n"
+             "Método  :\nCitometria de fluxo\n \nResultado:\n2.100\n \n/mL\n \nValor de Referência:\nAté 10.000/mL\n")
+
+    def test_primeiro_jato_nao_conflita_com_sedimento(self):
+        r = A.extract_results(Path("p.pdf"), self.TEXTO, None)[0]
+        self.assertEqual((r.exame_id, r.valor_numerico, r.ref_max), ("urina_pesquisa_leucocitos", 2100.0, 10000.0))
+        rs, conf = A.consolidar([A.asdict(r)] + [A.asdict(x) for x in A.extract_results(Path("u.pdf"), UrinaLayoutRealTests.PARCIAL, None)])
+        self.assertEqual(conf, [])
+
+    def test_unidade_equivalente(self):
+        self.assertEqual(A.chave_unidade("p/mL"), A.chave_unidade("/mL"))
+        self.assertEqual(A.chave_unidade("milhões/mm³"), A.chave_unidade("milhoes/mm3"))

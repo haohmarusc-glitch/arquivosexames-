@@ -554,19 +554,37 @@ def _make_result(path: Path, date: str | None, exame: str, raw: str, numeric: fl
     )
 
 
+def _prefixo_painel(titulo: str) -> str:
+    t = normalize(titulo)
+    if "eletroforese" in t:
+        return "Eletroforese "
+    if re.search(r"\bttpa\b|tromboplastina\s+parcial|\b[ak]ptt\b", t):
+        return "TTPA "  # "Tempo paciente" do TTPA nao e o do tempo de protrombina
+    return ""
+
+
+def _e_subtitulo(linha: str) -> bool:
+    if ":" in linha or linha.startswith(("|", "_", "-", "(")) or NUM_LINE_RE.match(linha):
+        return False
+    letras = [c for c in linha if c.isalpha()]
+    return len(letras) >= 3 and sum(c.isupper() for c in letras) / len(letras) >= 0.8
+
+
 def extract_panel(path: Path, lines: list[str], date: str | None, heading: str, material: str = "") -> list[LabResult]:
     """Paineis como hemograma e bilirrubinas: "Nome......:" seguido do valor e da faixa."""
     clean = [" ".join(x.split()) for x in lines]
     clean = [x for x in clean if x]
     results: list[LabResult] = []
-    head = normalize(heading)
-    prefix = "Eletroforese " if "eletroforese" in head else ""
-    if re.search(r"\bttpa\b|tromboplastina\s+parcial", head):
-        prefix = "TTPA "  # "Tempo do paciente" do TTPA nao e o do tempo de protrombina
+    secao = ""  # subtitulo dentro do bloco (COAGULOGRAMA traz TAP e KPTT juntos)
     for i, line in enumerate(clean):
         label = _is_label(line)
         if not label:
+            if _e_subtitulo(line):
+                secao = line
             continue
+        prefix = _prefixo_painel(secao) or _prefixo_painel(heading)
+        if prefix == "TTPA " and not re.match(r"(?:tempo|razao|relacao)\b", normalize(label)):
+            prefix = ""  # "Contagem de plaquetas" do coagulograma continua sendo plaquetas
         values: list[tuple[str, str]] = []  # (valor, unidade)
         reference = ""
         for nxt in clean[i + 1 : i + 12]:
@@ -651,6 +669,12 @@ MOTIVO_CONFLITO = "outro valor na mesma data"
 MOTIVO_SEM_TITULO = "rotulo generico sem titulo do exame"
 
 
+def chave_unidade(u: str | None) -> str:
+    """"p/mL" = "/mL", "milhões/mm³" = "milhoes/mm3", "µL" = "uL": mesma unidade escrita diferente."""
+    k = normalize(u or "").replace("μ", "u").replace("µ", "u").replace("³", "3").replace("²", "2").replace(" ", "")
+    return re.sub(r"^p/", "/", k)
+
+
 def _dominante(contagem: Counter) -> str | None:
     if not contagem:
         return None
@@ -703,7 +727,7 @@ def consolidar(resultados: list[dict]) -> tuple[list[dict], list[dict]]:
     serie: dict[str, Counter] = defaultdict(Counter)
     for r in saida:
         if r["unidade"] and r.get("valor_numerico") is not None:
-            serie[r["exame_id"]][r["unidade"]] += 1
+            serie[r["exame_id"]][chave_unidade(r["unidade"])] += 1
     dominante = {mid: _dominante(c) for mid, c in serie.items()}
     for r in saida:
         dom = dominante.get(r["exame_id"])
@@ -736,7 +760,7 @@ def consolidar(resultados: list[dict]) -> tuple[list[dict], list[dict]]:
             continue
         dom = dominante.get(mid)
         # unidade da serie; depois a coleta mais recente do dia; depois mais laudos confirmando
-        rs.sort(key=lambda r: (r["unidade"] != dom, "".join(chr(0x10FFFF - ord(c)) for c in r.get("coleta_hora") or ""),
+        rs.sort(key=lambda r: (chave_unidade(r["unidade"]) != dom, "".join(chr(0x10FFFF - ord(c)) for c in r.get("coleta_hora") or ""),
                                -len(r["arquivos"]), r["arquivos"][0] if r["arquivos"] else ""))
         escolhido = rs[0]
         for r in rs[1:]:
