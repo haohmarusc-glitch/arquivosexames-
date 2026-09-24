@@ -84,6 +84,14 @@ MARCADORES: list[tuple[str, str, str, tuple[str, ...]]] = [
     ("tfg", "Taxa de filtração glomerular", "rins", (r"filtracao\s+glomerular", r"\btfg\b", r"\begfr\b")),
     ("potassio", "Potássio", "rins", (r"potassio",)),
     ("sodio", "Sódio", "rins", (r"sodio",)),
+    # Urina tipo I (EAS), sedimento e urocultura: antes de "leucocitos"/"hemacias"
+    # do hemograma, senao pontos /mL ou /campo caem na serie de sangue.
+    # Bacterioscopia (Gram): contagem por campo (0 a ++++), nao por mL
+    ("urina_gram_leucocitos", "Leucócitos polimorfonucleares (Gram)", "rins", (r"polimorfonuclea",)),
+    # "Pesquisa de leucocitos" (urina de 1o jato) e outro exame que o sedimento do EAS
+    ("urina_pesquisa_leucocitos", "Pesquisa de leucócitos (urina 1º jato)", "rins", (r"pesquisa\s+de\s+leucocitos",)),
+    ("urina_leucocitos", "Leucócitos (urina)", "rins", (r"(?:urina|\beas\b|sediment|urocultura).*leucocitos",)),
+    ("urina_hemacias", "Hemácias (urina)", "rins", (r"(?:urina|\beas\b|sediment|urocultura).*(?:hemacias|eritrocitos)",)),
     # Urina tipo I (EAS)
     ("urina_ph", "pH urinário", "rins", (r"^ph$", r"^ph\s+urin")),
     ("urina_densidade", "Densidade urinária", "rins", (r"^densidade$", r"densidade\s+urin")),
@@ -91,16 +99,22 @@ MARCADORES: list[tuple[str, str, str, tuple[str, ...]]] = [
     ("urina_celulas_epiteliais", "Células epiteliais (urina)", "rins", (r"celulas\s+epiteliais",)),
     ("urina_tipo1", "Urina tipo I", "rins", (r"urina\s+tipo", r"^eas$", r"sumario\s+de\s+urina")),
     # Coagulacao (tempo de protrombina) — fatores produzidos pelo figado
+    # TTPA antes do TP: "razao paciente" e "tempo paciente" existem nos dois
+    ("ttpa_paciente", "TTPA: tempo do paciente", "figado", (r"ttpa.*tempo\s+(?:do\s+)?paciente",)),
+    ("ttpa_normal", "TTPA: tempo de controle", "figado", (r"ttpa.*tempo\s+(?:normal|controle)",)),
+    ("ttpa_razao", "TTPA: razão paciente/normal", "figado", (r"ttpa.*(?:razao|relacao)",)),
+    ("ttpa", "TTPA", "figado", (r"\bttpa\b", r"tromboplastina\s+parcial", r"\b[ak]ptt\b")),
     ("tp_rni", "RNI (tempo de protrombina)", "figado", (r"^rni$", r"^inr$", r"\brni\b")),
     ("tp_paciente", "Coagulação: tempo do paciente", "figado", (r"^tempo\s+(?:do\s+)?paciente",)),
     ("tp_normal", "Coagulação: tempo de controle", "figado", (r"^tempo\s+(?:normal|controle)",)),
     ("tp_razao", "Coagulação: razão paciente/normal", "figado", (r"razao\s+paciente",)),
     ("tp_atividade", "Atividade de protrombina", "figado", (r"atividade\s+(?:de\s+)?protrombina",)),
-    ("ttpa", "TTPA", "figado", (r"\bttpa\b", r"tromboplastina\s+parcial")),
     ("anti_hbs", "Anti-HBs (imunidade hepatite B)", "figado", (r"anti[\s-]*hbs",)),
     ("hbsag", "HBsAg (hepatite B)", "figado", (r"\bhbsag\b",)),
-    ("anti_hcv", "Anti-HCV (hepatite C)", "figado", (r"anti[\s-]*hcv",)),
+    ("anti_hcv", "Anti-HCV (hepatite C)", "figado", (r"anti[\s-]*hcv", r"anti[\s-]*hepatite\s*c\b")),
     # Espermograma
+    ("esperma_leucocitos", "Leucócitos no esperma", "testiculos", (r"(?:esperm|semen|seminal).*leucocitos",)),
+    ("esperma_hemacias", "Hemácias no esperma", "testiculos", (r"(?:esperm|semen|seminal).*(?:hemacias|eritrocitos)",)),
     ("esperma_total", "Espermatozoides no ejaculado", "testiculos", (r"espermatozoides\s+no\s+ejaculado",)),
     ("esperma_concentracao", "Espermatozoides por mL", "testiculos", (r"espermatozoides\s*/?\s*ml",)),
     ("esperma_motil_progressiva", "Motilidade progressiva", "testiculos", (r"motilidade\s+progressiva",)),
@@ -157,11 +171,57 @@ def _slug(texto: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", _normalizar(texto)).strip("_") or "desconhecido"
 
 
-def identificar(exame: str | None) -> tuple[str, str, str]:
-    """Retorna (id, nome de exibicao, sistema) para o titulo extraido do laudo."""
+# Rotulos que sozinhos nao dizem qual exame e ("Indice: 0,12" de uma sorologia).
+# Sem o titulo real do exame, viram um marcador unico que junta sorologias diferentes.
+GENERICO_RE = re.compile(
+    r"^(?:indice|index|leitura|absorbancia|s\s*/\s*co|d\.?o\.?\s*/\s*c\.?o\.?|valor|titulo|resultado)(?:\s*\(.*\))?$"
+)
+INDICE_RE = re.compile(r"^(?P<titulo>.+?)\s+-\s+(?P<rotulo>indice|index|leitura|absorbancia|s\s*/\s*co)(?:\s*\(.*\))?$")
+
+# Material/unidade que indicam urina (EAS, sedimento quantitativo, urocultura).
+URINA_MATERIAL_RE = re.compile(r"urina|\beas\b|sedimento|urocultura|jato\s+medio")
+URINA_UNIDADE_RE = re.compile(r"/\s*ml\b|/\s*campo|\bufc\b|p\s*/\s*ml|por\s+campo")
+_PARA_URINA = {"leucocitos": "urina_leucocitos", "hemacias": "urina_hemacias"}
+ESPERMA_MATERIAL_RE = re.compile(r"esperm|semen|seminal|ejaculado")
+_PARA_ESPERMA = {"leucocitos": "esperma_leucocitos", "hemacias": "esperma_hemacias"}
+
+
+def e_generico(exame: str | None) -> bool:
+    return bool(exame) and bool(GENERICO_RE.match(_normalizar(exame)))
+
+
+def e_urina(material: str | None = None, unidade: str | None = None) -> bool:
+    return bool(URINA_MATERIAL_RE.search(_normalizar(material or ""))
+                or URINA_UNIDADE_RE.search(_normalizar(unidade or "")))
+
+
+def identificar(exame: str | None, material: str | None = None, unidade: str | None = None) -> tuple[str, str, str]:
+    """Retorna (id, nome de exibicao, sistema) para o titulo extraido do laudo.
+
+    `material`/`unidade` separam leucocitos/hemacias da urina (EAS, sedimento,
+    urocultura) dos do hemograma, que tem o mesmo nome.
+    """
+    mid, nome, sistema = _identificar(exame)
+    alvo = None
+    if mid in _PARA_ESPERMA and ESPERMA_MATERIAL_RE.search(_normalizar(material or "")):
+        alvo = _PARA_ESPERMA[mid]  # antes da urina: "Hemacias/ml" do espermograma tambem e "/ml"
+    elif mid in _PARA_URINA and e_urina(material, unidade):
+        alvo = _PARA_URINA[mid]
+    if alvo:
+        return next((m, n, s) for m, n, s, _ in _COMPILADOS if m == alvo)
+    return mid, nome, sistema
+
+
+def _identificar(exame: str | None) -> tuple[str, str, str]:
     if not exame or exame == "Exame nao identificado":
         return ("nao_identificado", "Exame não identificado", "outros")
     texto = _normalizar(exame)
+    if GENERICO_RE.match(texto):
+        return ("sem_titulo", "Exame sem título", "outros")
+    indice = INDICE_RE.match(texto)
+    if indice:
+        mid, nome, sistema = _identificar(indice.group("titulo"))
+        return (f"{mid}_indice", f"{nome} (índice)", sistema)
     for mid, nome, sistema, padroes in _COMPILADOS:
         if any(p.search(texto) for p in padroes):
             return (mid, nome, sistema)

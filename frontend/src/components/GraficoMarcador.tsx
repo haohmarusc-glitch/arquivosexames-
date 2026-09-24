@@ -1,6 +1,6 @@
 import { CartesianGrid, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { Classificacao, Ponto } from '../api'
-import { fmtData, fmtMesAno, fmtNum, fmtReferencia, timestamp } from '../format'
+import { fmtData, fmtMesAno, fmtNum, fmtReferencia, larguraEixoY, timestamp } from '../format'
 
 const COR_PONTO: Record<Classificacao, string> = {
   acima: '#b8661f',
@@ -41,11 +41,12 @@ export function GraficoMarcador({ pontos, altura = 280, compacto = false }: Prop
   const hi = Math.max(...valores)
   const { dominio, ticks } = escalaBonita(lo, hi)
   const unidade = pontos[0]?.unidade ?? ''
+  const larguraY = larguraEixoY(ticks)
 
   return (
     <div style={{ height: altura }} className="w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={dados} margin={{ top: 12, right: compacto ? 6 : 16, bottom: 0, left: compacto ? -28 : -8 }}>
+        <LineChart data={dados} margin={{ top: 12, right: compacto ? 6 : 16, bottom: 0, left: compacto ? -28 : 0 }}>
           <CartesianGrid stroke="#e7eeee" vertical={false} />
           {(min != null || max != null) && (
             <ReferenceArea y1={min ?? dominio[0]} y2={max ?? dominio[1]} fill="#e3f2e8" fillOpacity={0.9} stroke="none" ifOverflow="hidden" />
@@ -70,7 +71,7 @@ export function GraficoMarcador({ pontos, altura = 280, compacto = false }: Prop
             tick={{ fontSize: 12, fill: '#5b7178' }}
             tickLine={false}
             axisLine={false}
-            width={56}
+            width={larguraY}
             hide={compacto}
           />
           {!compacto && (

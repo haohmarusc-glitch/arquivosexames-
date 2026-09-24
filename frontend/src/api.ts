@@ -54,6 +54,7 @@ export interface Ponto {
   referencia: string
   classificacao: Classificacao
   arquivo: string
+  arquivos?: string[]
 }
 
 export interface Serie {

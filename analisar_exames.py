@@ -18,7 +18,8 @@ import sys
 import tempfile
 import unicodedata
 import zipfile
-from dataclasses import asdict, dataclass
+from collections import Counter, defaultdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
@@ -26,7 +27,7 @@ from typing import Iterable
 from pypdf import PdfReader
 
 from achados import Achado, extrair_achados
-from mapa_exames import identificar
+from mapa_exames import e_generico, identificar
 
 
 DATE_RE = re.compile(r"\b([0-3]?\d/[01]?\d/(?:19|20)\d{2})\b")
@@ -80,6 +81,12 @@ class LabResult:
     exame_id: str
     exame_nome: str
     sistema: str
+    material: str = ""  # material/secao do bloco (ex.: "Urina jato medio"), separa urina de sangue
+    unidade_fonte: str = ""  # "laudo", "referencia", "padrao" (so exibicao) ou ""
+    grafico: bool = True  # False: fica na tabela, mas nao entra no grafico
+    motivo: str = ""  # por que grafico=False
+    arquivos: list[str] = field(default_factory=list)  # todos os PDFs com este mesmo valor
+    coleta_hora: str = ""  # "HH:MM" da coleta; desempata duas coletas no mesmo dia
 
 
 def normalize(value: str) -> str:
@@ -351,33 +358,96 @@ def reference_bounds(reference: str) -> tuple[float | None, float | None, bool]:
     return None, None, False
 
 
-def classification(value: float | None, reference: str) -> str:
-    if value is None:
-        return "nao determinado"
-    if not reference_bounds(reference)[2] and any(
-        t in normalize(reference) for t in ("alvo terapeutico", "categoria de risco", "nao ha valores de referencia")
-    ):
-        return "nao determinado"
-    candidatas = [x for x in reference.splitlines() if reference_bounds(x)[2]]
+def limites_referencia(reference: str) -> tuple[float | None, float | None]:
+    """(ref_min, ref_max) usados no grafico E na classificacao.
+
+    Varias faixas que discordam (ex.: "com jejum" x "sem jejum") ou metas por
+    categoria de risco nao dao um limite unico: devolve (None, None).
+    """
+    if not reference:
+        return None, None
+    candidatas = {reference_bounds(x)[:2] for x in reference.splitlines() if reference_bounds(x)[2]}
     if len(candidatas) > 1:
-        # Ex.: "com jejum" e "sem jejum": so classifica se todas concordam.
-        vereditos = {_classifica_uma(value, x) for x in candidatas}
-        return vereditos.pop() if len(vereditos) == 1 else "nao determinado"
-    return _classifica_uma(value, reference)
+        return None, None
+    low, high, _ = reference_bounds(reference)
+    return low, high
 
 
-def _classifica_uma(value: float, reference: str) -> str:
-    low, high, found = reference_bounds(reference)
-    if not found or (low is None and high is None):
+def classificar(value: float | None, ref_min: float | None, ref_max: float | None) -> str:
+    """Classificacao derivada SOMENTE de ref_min/ref_max, para nunca divergir do grafico."""
+    if value is None or (ref_min is None and ref_max is None):
         return "nao determinado"
-    if low is not None and value < low:
+    if ref_min is not None and value < ref_min:
         return "abaixo"
-    if high is not None and value > high:
+    if ref_max is not None and value > ref_max:
         return "acima"
     return "dentro"
 
 
-COLETA_RE = re.compile(r"coleta\s*:?\s*\n?\s*([0-3]?\d/[01]?\d/(?:19|20)\d{2})", re.IGNORECASE)
+def classification(value: float | None, reference: str) -> str:
+    return classificar(value, *limites_referencia(reference))
+
+
+# ------------------------------------------------------------------ Unidades
+
+UNIDADE_TOKEN_RE = re.compile(r"^[A-Za-zÀ-ÿµμ%‰°/³²¹⁰-⁹0-9.^x\-]+$")  # com acento: "milhões/mm3"
+UNIDADE_PALAVRAS = {
+    "mg", "g", "ng", "pg", "ug", "µg", "μg", "mcg", "fl", "u", "ui", "mui", "µui", "μui", "uui", "meq", "mmol", "umol",
+    "µmol", "μmol", "nmol", "pmol", "mm", "mmhg", "s", "seg", "segundos", "segundo", "min", "minutos", "ratio", "kg", "cm",
+    "l", "ml", "dl", "mm3", "mm³", "cel", "celulas", "milhoes", "mil", "ufc", "campo", "ms", "copias", "ua", "iu", "miu",
+}
+NAO_UNIDADE = {
+    "a", "ate", "de", "da", "do", "e", "ou", "em", "para", "com", "sem", "sr", "sra", "dr", "dra", "nota", "notas", "obs",
+    "inferior", "superior", "menor", "maior", "igual", "resultado", "valor", "valores", "referencia", "negativo",
+    "positivo", "reagente", "nao", "ausente", "ausentes", "presente", "idade", "anos", "material", "metodo", "coleta",
+}
+
+
+def unidade_valida(unidade: str | None) -> str:
+    """Devolve a unidade limpa, ou "" quando o texto capturado e pedaco do laudo
+    ("Sr (a)", "Ate 1,2", ">= 39.000.000", "Notas:") e nao uma unidade."""
+    u = " ".join((unidade or "").split()).strip(" .;")
+    if not u or len(u) > 20 or re.search(r"[:()<>=≤≥,]", u):
+        return ""
+    tokens = u.split()
+    if len(tokens) > 2 or not all(UNIDADE_TOKEN_RE.match(t) for t in tokens):
+        return ""
+    if normalize(tokens[0]).strip(".") in NAO_UNIDADE:
+        return ""
+    if not re.search(r"[A-Za-zÀ-ÿµμ%‰³²]", u):
+        return ""  # so numeros
+    if any(c in u for c in "/%‰^³²") or all(normalize(t).strip(".") in UNIDADE_PALAVRAS for t in tokens):
+        return u
+    return ""
+
+
+UNIDADE_NA_REF_RE = re.compile(r"\d(?:[\d.,]*\d)?\s*(?P<u>[^\s\d][^\s]*(?:\s+/\s*[^\s]+)?)")
+
+
+def unidade_da_referencia(reference: str) -> str:
+    """Primeira unidade valida escrita logo depois de um numero da referencia ("70 a 99 mg/dL")."""
+    for m in UNIDADE_NA_REF_RE.finditer(reference or ""):
+        u = unidade_valida(m.group("u"))
+        if u:
+            return u
+    return ""
+
+
+# So para EXIBICAO quando nem o valor nem a referencia trazem a unidade. Nunca
+# usada para decidir serie, conflito ou classificacao.
+UNIDADE_PADRAO: dict[str, str] = {
+    "glicose": "mg/dL", "hba1c": "%", "hemoglobina": "g/dL", "hematocrito": "%", "hemacias": "milhões/mm³",
+    "leucocitos": "/mm³", "plaquetas": "/mm³", "vgm": "fL", "hcm": "pg", "chcm": "g/dL", "rdw": "%",
+    "creatinina": "mg/dL", "ureia": "mg/dL", "acido_urico": "mg/dL", "colesterol_total": "mg/dL", "ldl": "mg/dL",
+    "hdl": "mg/dL", "vldl": "mg/dL", "nao_hdl": "mg/dL", "triglicerides": "mg/dL", "tgo": "U/L", "tgp": "U/L",
+    "ggt": "U/L", "fosfatase_alcalina": "U/L", "sodio": "mEq/L", "potassio": "mEq/L", "vhs": "mm/h",
+    "ferritina": "ng/mL", "vitamina_d": "ng/mL", "vitamina_b12": "pg/mL", "tsh": "µUI/mL", "t4_livre": "ng/dL",
+    "psa_total": "ng/mL", "psa_livre": "ng/mL", "tp_paciente": "s", "tp_normal": "s", "ttpa_paciente": "s",
+    "ttpa_normal": "s", "tp_atividade": "%",
+}
+
+
+COLETA_RE = re.compile(r"coleta\s*:?\s*\n?\s*([0-3]?\d/[01]?\d/(?:19|20)\d{2})(?:\s*-?\s*(\d{1,2}:\d{2}))?", re.IGNORECASE)
 NUM_LINE_RE = re.compile(r"^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?$|^-?\d+(?:[.,]\d+)?$")
 LABEL_RE = re.compile(r"^(?P<label>[^\d:\s][^:]{0,70}?)[\s.]*:\s*$")
 REF_LINE_RE = re.compile(r"\d[\d.,]*\s*(?:a|ate|-)\s*\d|inferior|superior|menor|maior|nao ha valores", re.IGNORECASE)
@@ -386,7 +456,54 @@ IGNORED_LABELS = (
     "sr (a)", "idade", "dr (a)", "data", "nro", "documento", "celulas contadas", "resultado", "homens", "mulheres",
     "eritrograma", "leucograma", "local", "prescricao", "responsavel",
 )
+# "Leucocitos................p/mL:" -> nome "Leucocitos", unidade "p/mL"
+UNIT_DOTS_RE = re.compile(r"^(?P<nome>.*?\S)\s*\.{2,}\s*(?P<unit>[^\s.]\S*)$")
+UNIT_SLASH_RE = re.compile(r"^.*?[^\s/]\s*(?P<unit>/\s*(?:ml|mm3|campo|µl|ul))$", re.IGNORECASE)
 UNIT_PAREN_RE = re.compile(r"^(?P<nome>.*?)\s*\((?P<unit>[^)]*(?:/|%|dl|l|fl|pg|mm3)[^)]*)\)\s*$", re.IGNORECASE)
+MATERIAL_RE = re.compile(r"^\s*material\s*:?\s*(?P<resto>.*)$", re.IGNORECASE)
+
+
+def block_material(lines: list[str]) -> str:
+    """Titulo + material do bloco ("EAS / Urina jato medio"), usado para separar urina de sangue."""
+    cheias = [" ".join(l.split()) for l in lines if l.strip()][:8]
+    partes: list[str] = cheias[:1]
+    for k, linha in enumerate(cheias):
+        m = MATERIAL_RE.match(linha)
+        if m:
+            resto = m.group("resto").strip()
+            partes.append(resto or (cheias[k + 1] if k + 1 < len(cheias) else ""))
+            break
+    return " / ".join(p for p in partes if p)
+
+
+RESULTADO_TEXTO_RE = re.compile(
+    r"^(?:nao\s+)?(?:reagente|reativo|detectado|detectavel)s?$|^(?:negativo|positivo|ausentes?|presentes?|indeterminado|inconclusivo)$"
+)
+
+
+def titulo_acima(lines: list[str], index: int) -> str | None:
+    """Titulo real do exame nas linhas acima de um rotulo generico ("Indice")."""
+    for i in range(index - 1, -1, -1):
+        candidato = " ".join(lines[i].split()).strip(" _:-.")
+        if not candidato or len(candidato) > 100 or e_generico(candidato) or ":" in lines[i]:
+            continue
+        baixo = normalize(candidato)
+        if baixo.startswith(IGNORED_LABELS) or NUM_LINE_RE.match(candidato) or REF_LINE_RE.search(baixo):
+            continue
+        if RESULTADO_TEXTO_RE.match(baixo):
+            continue  # "NAO REAGENTE" e o resultado, nao o titulo do exame
+        letras = [c for c in candidato if c.isalpha()]
+        if len(letras) >= 3 and sum(c.isupper() for c in letras) / len(letras) >= 0.72:
+            return candidato
+    return None
+
+
+def resolver_generico(exame: str, lines: list[str], index: int) -> tuple[str, bool]:
+    """"Indice" sozinho vira "<TITULO> - Indice"; sem titulo, nao vai para o grafico."""
+    if not e_generico(exame):
+        return exame, True
+    titulo = titulo_acima(lines, index)
+    return (f"{titulo} - {exame}", True) if titulo else (exame, False)
 
 
 def split_blocks(lines: list[str]) -> list[tuple[int, int]]:
@@ -409,6 +526,11 @@ def block_date(lines: list[str], fallback: str | None) -> str | None:
     return fallback
 
 
+def block_hora(lines: list[str]) -> str:
+    match = COLETA_RE.search("\n".join([l for l in lines if l.strip()][:12]))
+    return (match.group(2) or "").zfill(5) if match and match.group(2) else ""
+
+
 def _is_label(line: str) -> str | None:
     m = LABEL_RE.match(line)
     if not m:
@@ -423,27 +545,54 @@ PERFIL: dict[str, object] = {"sexo": None, "idade": None}
 IDADE_RE = re.compile(r"idade\s*\n?\s*:?\s*\n?\s*(\d{1,3})\s*anos", re.IGNORECASE)
 
 
-def _make_result(path: Path, date: str | None, exame: str, raw: str, numeric: float | None, unit: str, reference: str) -> LabResult:
+def _make_result(path: Path, date: str | None, exame: str, raw: str, numeric: float | None, unit: str, reference: str,
+                 material: str = "", grafico: bool = True) -> LabResult:
     escolhida = select_reference(reference, PERFIL.get("sexo"), PERFIL.get("idade"))  # type: ignore[arg-type]
-    ref_min, ref_max, _ = reference_bounds(escolhida)
-    exame_id, exame_nome, sistema = identificar(exame)
+    ref_min, ref_max = limites_referencia(escolhida)
+    unidade, fonte = unidade_valida(unit), "laudo"
+    if not unidade:
+        unidade, fonte = unidade_da_referencia(escolhida or reference), "referencia"
+    exame_id, exame_nome, sistema = identificar(exame, material, unidade)
     return LabResult(
-        arquivo=path.name, data=date, exame=exame, valor_texto=raw, valor_numerico=numeric, unidade=unit,
-        referencia=reference, ref_min=ref_min, ref_max=ref_max, classificacao=classification(numeric, escolhida),
-        exame_id=exame_id, exame_nome=exame_nome, sistema=sistema,
+        arquivo=path.name, data=date, exame=exame, valor_texto=raw, valor_numerico=numeric, unidade=unidade,
+        referencia=reference, ref_min=ref_min, ref_max=ref_max, classificacao=classificar(numeric, ref_min, ref_max),
+        exame_id=exame_id, exame_nome=exame_nome, sistema=sistema, material=material,
+        unidade_fonte=fonte if unidade else "", grafico=grafico,
+        motivo="" if grafico else "rotulo generico sem titulo do exame", arquivos=[path.name],
     )
 
 
-def extract_panel(path: Path, lines: list[str], date: str | None, heading: str) -> list[LabResult]:
+def _prefixo_painel(titulo: str) -> str:
+    t = normalize(titulo)
+    if "eletroforese" in t:
+        return "Eletroforese "
+    if re.search(r"\bttpa\b|tromboplastina\s+parcial|\b[ak]ptt\b", t):
+        return "TTPA "  # "Tempo paciente" do TTPA nao e o do tempo de protrombina
+    return ""
+
+
+def _e_subtitulo(linha: str) -> bool:
+    if ":" in linha or linha.startswith(("|", "_", "-", "(")) or NUM_LINE_RE.match(linha):
+        return False
+    letras = [c for c in linha if c.isalpha()]
+    return len(letras) >= 3 and sum(c.isupper() for c in letras) / len(letras) >= 0.8
+
+
+def extract_panel(path: Path, lines: list[str], date: str | None, heading: str, material: str = "") -> list[LabResult]:
     """Paineis como hemograma e bilirrubinas: "Nome......:" seguido do valor e da faixa."""
     clean = [" ".join(x.split()) for x in lines]
     clean = [x for x in clean if x]
     results: list[LabResult] = []
-    prefix = "Eletroforese " if "eletroforese" in normalize(heading) else ""
+    secao = ""  # subtitulo dentro do bloco (COAGULOGRAMA traz TAP e KPTT juntos)
     for i, line in enumerate(clean):
         label = _is_label(line)
         if not label:
+            if _e_subtitulo(line):
+                secao = line
             continue
+        prefix = _prefixo_painel(secao) or _prefixo_painel(heading)
+        if prefix == "TTPA " and not re.match(r"(?:tempo|razao|relacao)\b", normalize(label)):
+            prefix = ""  # "Contagem de plaquetas" do coagulograma continua sendo plaquetas
         values: list[tuple[str, str]] = []  # (valor, unidade)
         reference = ""
         for nxt in clean[i + 1 : i + 12]:
@@ -465,7 +614,7 @@ def extract_panel(path: Path, lines: list[str], date: str | None, heading: str) 
                     reference += "\n" + clean[j]
                     j += 1
                 break
-            elif values and not values[-1][1] and len(nxt) <= 14 and not nxt[0].isdigit():
+            elif values and not values[-1][1] and len(nxt) <= 14 and not nxt[0].isdigit() and unidade_valida(nxt):
                 values[-1] = (values[-1][0], nxt)
         if not values:
             continue
@@ -474,10 +623,16 @@ def extract_panel(path: Path, lines: list[str], date: str | None, heading: str) 
         paren = UNIT_PAREN_RE.match(label)
         if paren:
             nome, unit = paren.group("nome").strip(" ."), unit or paren.group("unit")
-        if not unit and reference:
-            tokens = reference.split()
-            unit = tokens[-1] if tokens and not tokens[-1][0].isdigit() else ""
-        results.append(_make_result(path, date, prefix + nome, f"{raw} {unit}".strip(), parse_number(raw), unit, reference))
+        pontos = UNIT_DOTS_RE.match(nome)
+        if pontos and unidade_valida(pontos.group("unit")):
+            nome, unit = pontos.group("nome").strip(" ."), unit or pontos.group("unit")
+        barra = UNIT_SLASH_RE.match(nome)
+        if barra and not unit:
+            unit = barra.group("unit")  # "Hemacias/ml": o nome fica inteiro (o mapa usa "espermatozoides/ml")
+        nome, grafico = resolver_generico(nome, clean, i)
+        unit = unidade_valida(unit)  # sem unidade valida, _make_result tenta a da referencia
+        results.append(_make_result(path, date, prefix + nome, f"{raw} {unit}".strip(), parse_number(raw), unit, reference,
+                                    material=material, grafico=grafico))
     return results
 
 
@@ -489,6 +644,8 @@ def extract_results(path: Path, text: str, date: str | None) -> list[LabResult]:
     for start, end in split_blocks(all_lines):
         lines = all_lines[start:end]
         bdate = block_date(lines, date)
+        material = block_material(lines)
+        inicio = len(results)
         found = False
         for index, line in enumerate(lines):
             # Alguns laboratorios colocam "Resultado:" e o valor em linhas separadas.
@@ -503,13 +660,145 @@ def extract_results(path: Path, text: str, date: str | None) -> list[LabResult]:
             exame = probable_heading(lines, index)
             if exame == "Exame nao identificado" and start and lines[0].strip():
                 exame = " ".join(lines[0].split())  # titulo do bloco
+            linha_titulo = next((i for i in range(index - 1, -1, -1) if " ".join(lines[i].split()) == exame), index)
+            exame, grafico = resolver_generico(exame, lines, linha_titulo)
             results.append(_make_result(path, bdate, exame, raw_value,
                                         parse_number(match.group("number")), (match.group("unit") or "").strip(),
-                                        reference_near(lines, index)))
+                                        reference_near(lines, index), material=material, grafico=grafico))
         if not found:
             heading = " ".join(lines[0].split()) if lines else ""
-            results.extend(extract_panel(path, lines, bdate, heading))
+            results.extend(extract_panel(path, lines, bdate, heading, material))
+        for r in results[inicio:]:
+            r.coleta_hora = block_hora(lines)
     return results
+
+
+# ------------------------------------------------------------------ Consolidacao da serie
+
+MOTIVO_SEM_UNIDADE = "sem unidade numa serie em "
+MOTIVO_CONFLITO = "outro valor na mesma data"
+MOTIVO_SEM_TITULO = "rotulo generico sem titulo do exame"
+
+
+def chave_unidade(u: str | None) -> str:
+    """"p/mL" = "/mL", "milhões/mm³" = "milhoes/mm3", "µL" = "uL": mesma unidade escrita diferente."""
+    k = normalize(u or "").replace("μ", "u").replace("µ", "u").replace("³", "3").replace("²", "2").replace(" ", "")
+    return re.sub(r"^p/", "/", k)
+
+
+def _dominante(contagem: Counter) -> str | None:
+    if not contagem:
+        return None
+    unidade, n = contagem.most_common(1)[0]
+    return unidade if n >= 2 and n * 2 > sum(contagem.values()) else None
+
+
+def consolidar(resultados: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Normaliza a lista de resultados (dicts) e decide o que vai para o grafico.
+
+    Idempotente: a API chama de novo sobre o JSON ja consolidado + envios.
+    - unidade: rejeita texto do laudo, tenta a da referencia, e so no fim usa
+      UNIDADE_PADRAO (marcada como "padrao", apenas exibicao);
+    - id: recalculado com material/unidade (urina x sangue);
+    - classificacao: SOMENTE de ref_min/ref_max;
+    - ponto sem unidade numa serie com unidade dominante sai do grafico;
+    - (marcador, data, valor) repetido vira um registro com todos os arquivos;
+      valores diferentes na mesma data vao para os conflitos e so um fica no grafico.
+    Retorna (resultados, conflitos).
+    """
+    saida: list[dict] = []
+    for original in resultados:
+        r = dict(original)
+        r.setdefault("material", "")
+        r["arquivos"] = sorted(set(r.get("arquivos") or []) | ({r["arquivo"]} if r.get("arquivo") else set()))
+        motivo = r.get("motivo") or ""
+        if motivo.startswith((MOTIVO_SEM_UNIDADE, MOTIVO_CONFLITO)):
+            r["grafico"], r["motivo"] = True, ""  # decisoes da serie: refeitas abaixo
+        else:
+            r["grafico"], r["motivo"] = r.get("grafico", True) is not False and not motivo, motivo
+        fonte = r.get("unidade_fonte", "laudo")
+        unidade = "" if fonte == "padrao" else unidade_valida(r.get("unidade"))
+        if unidade:
+            fonte = fonte or "laudo"
+        else:
+            unidade = unidade_da_referencia(r.get("referencia") or "")
+            fonte = "referencia" if unidade else ""
+        r["unidade"], r["unidade_fonte"] = unidade, fonte
+        if r.get("exame"):
+            r["exame_id"], r["exame_nome"], r["sistema"] = identificar(r["exame"], r["material"], unidade)
+        elif not r.get("exame_id"):
+            r["exame_id"], r["exame_nome"], r["sistema"] = identificar(None)
+        if r["exame_id"] == "sem_titulo" and r["grafico"]:
+            r["grafico"], r["motivo"] = False, MOTIVO_SEM_TITULO
+        r.setdefault("ref_min", None)
+        r.setdefault("ref_max", None)
+        r["classificacao"] = classificar(r.get("valor_numerico"), r["ref_min"], r["ref_max"])
+        saida.append(r)
+
+    serie: dict[str, Counter] = defaultdict(Counter)
+    for r in saida:
+        if r["unidade"] and r.get("valor_numerico") is not None:
+            serie[r["exame_id"]][chave_unidade(r["unidade"])] += 1
+    dominante = {mid: _dominante(c) for mid, c in serie.items()}
+    for r in saida:
+        dom = dominante.get(r["exame_id"])
+        if r["grafico"] and dom and not r["unidade"] and r.get("valor_numerico") is not None:
+            r["grafico"], r["motivo"] = False, MOTIVO_SEM_UNIDADE + dom
+
+    # mesma (marcador, data, valor): um registro so, com todos os arquivos
+    unicos: dict[tuple, dict] = {}
+    finais: list[dict] = []
+    ordem = sorted(saida, key=lambda r: (not r["grafico"], not r["unidade"], r.get("arquivo") or ""))
+    for r in ordem:
+        if r.get("valor_numerico") is None or not r.get("data"):
+            finais.append(r)
+            continue
+        chave = (r["exame_id"], r["data"], r["valor_numerico"])
+        if chave in unicos:
+            unicos[chave]["arquivos"] = sorted(set(unicos[chave]["arquivos"]) | set(r["arquivos"]))
+            continue
+        unicos[chave] = r
+        finais.append(r)
+
+    # valores diferentes na mesma data: so um no grafico
+    grupos: dict[tuple, list[dict]] = defaultdict(list)
+    for r in finais:
+        if r["grafico"] and r.get("valor_numerico") is not None and r.get("data"):
+            grupos[(r["exame_id"], r["data"])].append(r)
+    conflitos: list[dict] = []
+    for (mid, data), rs in sorted(grupos.items()):
+        if len(rs) < 2:
+            continue
+        dom = dominante.get(mid)
+        # unidade da serie; depois a coleta mais recente do dia; depois mais laudos confirmando
+        rs.sort(key=lambda r: (chave_unidade(r["unidade"]) != dom, "".join(chr(0x10FFFF - ord(c)) for c in r.get("coleta_hora") or ""),
+                               -len(r["arquivos"]), r["arquivos"][0] if r["arquivos"] else ""))
+        escolhido = rs[0]
+        for r in rs[1:]:
+            r["grafico"], r["motivo"] = False, MOTIVO_CONFLITO
+        conflitos.append({
+            "exame_id": mid, "exame_nome": escolhido["exame_nome"], "data": data,
+            "escolhido": escolhido["valor_numerico"],
+            "valores": [{"valor": r["valor_numerico"], "valor_texto": r.get("valor_texto"), "unidade": r["unidade"],
+                         "coleta_hora": r.get("coleta_hora", ""),
+                         "arquivos": r["arquivos"], "no_grafico": r is escolhido} for r in rs],
+        })
+
+    # mesma unidade com grafias diferentes (mg/dl x mg/dL, uIU x µIU): a serie usa a mais comum
+    grafias: dict[tuple[str, str], Counter] = defaultdict(Counter)
+    for r in finais:
+        if r["unidade"]:
+            grafias[(r["exame_id"], chave_unidade(r["unidade"]))][r["unidade"]] += 1
+    for r in finais:
+        if r["unidade"]:
+            contagem = grafias[(r["exame_id"], chave_unidade(r["unidade"]))]
+            r["unidade"] = max(contagem, key=lambda u: (contagem[u], u != u.lower(), "µ" in u, u))
+
+    for r in finais:
+        if not r["unidade"] and r["exame_id"] in UNIDADE_PADRAO:
+            r["unidade"], r["unidade_fonte"] = UNIDADE_PADRAO[r["exame_id"]], "padrao"
+    finais.sort(key=lambda r: (r.get("data") or "", r.get("arquivo") or ""))
+    return finais, conflitos
 
 
 def find_pdfs(source: Path, temp_dir: Path) -> list[Path]:
@@ -578,11 +867,12 @@ def write_csv(path: Path, rows: Iterable[object], fieldnames: list[str]) -> None
         writer = csv.DictWriter(stream, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
-            writer.writerow(asdict(row))
+            dados = row if isinstance(row, dict) else asdict(row)
+            writer.writerow({k: "; ".join(v) if isinstance(v, list) else v for k, v in dados.items() if k in fieldnames})
 
 
-def write_summary(path: Path, files: list[ExamFile], results: list[LabResult]) -> None:
-    abnormal = [r for r in results if r.classificacao in {"acima", "abaixo"}]
+def write_summary(path: Path, files: list[ExamFile], results: list[dict]) -> None:
+    abnormal = [r for r in results if r["classificacao"] in {"acima", "abaixo"}]
     dates = sorted({f.data for f in files if f.data})
     lines = [
         "# Resumo local dos exames",
@@ -599,8 +889,8 @@ def write_summary(path: Path, files: list[ExamFile], results: list[LabResult]) -
     ]
     if abnormal:
         lines.extend(["| Data | Exame | Resultado | Sinalizacao | Arquivo |", "|---|---|---:|---|---|"])
-        for r in sorted(abnormal, key=lambda x: (x.data or "", x.exame)):
-            lines.append(f"| {r.data or '-'} | {r.exame} | {r.valor_texto} | {r.classificacao} | {r.arquivo} |")
+        for r in sorted(abnormal, key=lambda x: (x["data"] or "", x["exame"])):
+            lines.append(f"| {r['data'] or '-'} | {r['exame']} | {r['valor_texto']} | {r['classificacao']} | {', '.join(r['arquivos'])} |")
     else:
         lines.append("Nenhum item foi classificado automaticamente como fora do intervalo.")
     lines += [
@@ -646,17 +936,21 @@ def main() -> int:
             except Exception as exc:
                 errors.append({"arquivo": pdf.name, "erro": str(exc)})
 
+    consolidados, conflitos = consolidar([asdict(x) for x in results])
     write_csv(args.saida / "catalogo.csv", files, list(ExamFile.__annotations__))
-    write_csv(args.saida / "resultados.csv", results, list(LabResult.__annotations__))
-    payload = {"aviso": "Organizacao automatica; nao e diagnostico medico.", "arquivos": [asdict(x) for x in files], "resultados": [asdict(x) for x in results], "achados": [asdict(x) for x in findings], "erros": errors}
+    write_csv(args.saida / "resultados.csv", consolidados, list(LabResult.__annotations__))
+    payload = {"aviso": "Organizacao automatica; nao e diagnostico medico.", "arquivos": [asdict(x) for x in files], "resultados": consolidados, "achados": [asdict(x) for x in findings], "erros": errors}
     (args.saida / "resultados.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    write_summary(args.saida / "resumo.md", files, results)
+    (args.saida / "conflitos.json").write_text(json.dumps(conflitos, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_summary(args.saida / "resumo.md", files, consolidados)
     dups = [f for f in files if f.tipo == "duplicado"]
     divergentes = [f for f in files if f.aviso and f.tipo != "duplicado"]
-    print(f"Concluido: {len(files)} PDFs ({len(files) - len(dups)} unicos), {len(results)} resultados, "
+    print(f"Concluido: {len(files)} PDFs ({len(files) - len(dups)} unicos), {len(consolidados)} resultados, "
           f"{len(findings)} achados de imagem, {len(errors)} erros.")
     if dups:
         print(f"ATENCAO: {len(dups)} PDF(s) com conteudo repetido, ignorados (confira o download no portal).")
+    if conflitos:
+        print(f"ATENCAO: {len(conflitos)} data(s) com valores diferentes para o mesmo marcador (ver conflitos.json).")
     if divergentes:
         print(f"ATENCAO: {len(divergentes)} PDF(s) com nome de exame de imagem, mas conteudo laboratorial.")
     print(f"Saida: {args.saida.resolve()}")
