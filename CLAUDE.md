@@ -70,6 +70,17 @@ Code separado com uma ferramenta de imagem que esta sessao de chat nao tem.
   arquivos prontos em `imagens-anatomia/camadas/` e `costas/` fora do repo,
   nao processados ainda).
 
+## Imagens de anatomia novas (2026-09)
+- `orgaos-frente.webp` e `costas/orgaos-costas.webp` trocadas por uma ilustracao
+  nova, SEM texto (as duas vistas vieram numa imagem so; recortadas, centradas
+  na linha media e reduzidas para caber inteiras com as maos, 700x1734 com
+  fundo transparente). A vista de costas veio com figado/baco do lado errado e
+  foi ESPELHADA (de costas, figado a direita da tela).
+- Todas as caixas de `ORGAOS_FRENTE`, `ORGAOS_COSTAS` e `PULMOES_FRENTE` foram
+  medidas de novo numa grade do viewBox (vx = 30.819 + px*0.36909,
+  vy = 8 + py*0.36909), com area minima de 10x10 para toque no celular.
+- A secao abaixo descreve a calibracao da imagem ANTERIOR (so historico).
+
 ## Auditoria da anatomia (2026-09)
 - Caixas de `ORGAOS_FRENTE` recalibradas com uma grade do viewBox desenhada
   sobre `orgaos-frente.webp` (vx = 30.145 + px*0.37101, vy = 8 + py*0.37101).

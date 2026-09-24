@@ -22,32 +22,34 @@ export interface OrgaoImagem {
 
 // Orgaos clicaveis (tem exames de sangue associados) — vista de frente.
 // Caixas medidas diretamente na imagem composta unica (orgaos-frente.webp,
-// 700x1725, desenhada com "slice": vx = 30.145 + px*0.37101, vy = 8 + py*0.37101).
-// Recalibradas em 2026-09 sobrepondo uma grade do viewBox na propria imagem.
+// 700x1734, desenhada com "slice": vx = 30.819 + px*0.36909, vy = 8 + py*0.36909).
+// Recalibradas em 2026-09 (imagem nova, sem texto) sobrepondo uma grade do viewBox.
 // Itens sem imagem propria (arquivo '') aparecem so como area de clique.
+// Areas com no minimo 10x10 no viewBox, para dar para tocar no celular.
 export const ORGAOS_FRENTE: OrgaoImagem[] = [
-  { id: 'hipofise', sistema: 'hormonios', nome: 'Hipófise', arquivo: '', proporcao: 1, caixa: { x: 155, y: 44, w: 10, h: 8 } },
-  { id: 'tireoide', sistema: 'tireoide', nome: 'Tireoide', arquivo: '', proporcao: 1, caixa: { x: 148, y: 95, w: 25, h: 13 } },
-  { id: 'coracao', sistema: 'coracao', nome: 'Coração', arquivo: '', proporcao: 1, caixa: { x: 151, y: 145, w: 40, h: 50 } },
-  { id: 'figado', sistema: 'figado', tambem: ['proteinas'], nome: 'Fígado', arquivo: '', proporcao: 1, caixa: { x: 112, y: 193, w: 66, h: 35 } },
-  { id: 'baco', sistema: 'sangue', nome: 'Baço', arquivo: '', proporcao: 1, caixa: { x: 200, y: 196, w: 12, h: 31 } },
-  { id: 'pancreas', sistema: 'pancreas', nome: 'Pâncreas', arquivo: '', proporcao: 1, caixa: { x: 145, y: 227, w: 53, h: 18 } },
-  // Corrigido: rim DIREITO da pessoa fica a ESQUERDA da tela (vista de frente).
-  { id: 'rimD', sistema: 'rins', nome: 'Rim direito', arquivo: '', proporcao: 1, caixa: { x: 121, y: 233, w: 22, h: 27 } },
-  { id: 'rimE', sistema: 'rins', nome: 'Rim esquerdo', arquivo: '', proporcao: 1, caixa: { x: 187, y: 233, w: 20, h: 26 } },
-  { id: 'adrenalD', sistema: 'hormonios', nome: 'Suprarrenal direita', arquivo: '', proporcao: 1, caixa: { x: 127, y: 226, w: 12, h: 7 } },
-  { id: 'adrenalE', sistema: 'hormonios', nome: 'Suprarrenal esquerda', arquivo: '', proporcao: 1, caixa: { x: 189, y: 226, w: 12, h: 7 } },
-  { id: 'bexiga', sistema: 'rins', nome: 'Bexiga', arquivo: '', proporcao: 1, caixa: { x: 148, y: 335, w: 23, h: 16 } },
-  { id: 'prostata', sistema: 'prostata', nome: 'Próstata', arquivo: '', proporcao: 1, caixa: { x: 153, y: 351, w: 14, h: 10 } },
+  { id: 'hipofise', sistema: 'hormonios', nome: 'Hipófise', arquivo: '', proporcao: 1, caixa: { x: 155, y: 106, w: 10, h: 10 } },
+  { id: 'tireoide', sistema: 'tireoide', nome: 'Tireoide', arquivo: '', proporcao: 1, caixa: { x: 152, y: 139, w: 16, h: 10 } },
+  { id: 'coracao', sistema: 'coracao', nome: 'Coração', arquivo: '', proporcao: 1, caixa: { x: 149, y: 195, w: 28, h: 31 } },
+  { id: 'figado', sistema: 'figado', tambem: ['proteinas'], nome: 'Fígado', arquivo: '', proporcao: 1, caixa: { x: 119, y: 224, w: 53, h: 34 } },
+  { id: 'baco', sistema: 'sangue', nome: 'Baço', arquivo: '', proporcao: 1, caixa: { x: 190, y: 232, w: 10, h: 26 } },
+  { id: 'pancreas', sistema: 'pancreas', nome: 'Pâncreas', arquivo: '', proporcao: 1, caixa: { x: 151, y: 251, w: 37, h: 16 } },
+  // Rim DIREITO da pessoa fica a ESQUERDA da tela (vista de frente).
+  { id: 'rimD', sistema: 'rins', nome: 'Rim direito', arquivo: '', proporcao: 1, caixa: { x: 130, y: 259, w: 17, h: 22 } },
+  { id: 'rimE', sistema: 'rins', nome: 'Rim esquerdo', arquivo: '', proporcao: 1, caixa: { x: 177, y: 259, w: 16, h: 19 } },
+  // Suprarrenais nao aparecem de frente (ficam atras): area no topo de cada rim.
+  { id: 'adrenalD', sistema: 'hormonios', nome: 'Suprarrenal direita', arquivo: '', proporcao: 1, caixa: { x: 134, y: 251, w: 10, h: 10 } },
+  { id: 'adrenalE', sistema: 'hormonios', nome: 'Suprarrenal esquerda', arquivo: '', proporcao: 1, caixa: { x: 180, y: 251, w: 10, h: 10 } },
+  { id: 'bexiga', sistema: 'rins', nome: 'Bexiga', arquivo: '', proporcao: 1, caixa: { x: 146, y: 324, w: 25, h: 19 } },
+  { id: 'prostata', sistema: 'prostata', nome: 'Próstata', arquivo: '', proporcao: 1, caixa: { x: 154, y: 344, w: 10, h: 10 } },
   // A ilustracao nao desenha a genitalia: area esquematica logo abaixo do pube.
-  { id: 'testiculos', sistema: 'testiculos', nome: 'Testículos (região escrotal)', arquivo: '', proporcao: 1, caixa: { x: 151, y: 366, w: 18, h: 13 } },
+  { id: 'testiculos', sistema: 'testiculos', nome: 'Testículos (região escrotal)', arquivo: '', proporcao: 1, caixa: { x: 154, y: 354, w: 12, h: 10 } },
 ]
 
 // Recorte (dentro da propria imagem composta) usado so para a animacao de
 // respiracao via clip-path — nao sao clicaveis, nao tem sistema associado.
 export const PULMOES_FRENTE = {
-  pulmaoD: { x: 94, y: 122, w: 49, h: 73 },
-  pulmaoE: { x: 182, y: 122, w: 45, h: 73 },
+  pulmaoD: { x: 119, y: 169, w: 34, h: 60 },
+  pulmaoE: { x: 173, y: 169, w: 31, h: 60 },
 }
 
 // --- Vista de COSTAS -------------------------------------------------------
@@ -56,17 +58,18 @@ export const PULMOES_FRENTE = {
 // sobre a imagem: vx = 30.819 + px*0.36909, vy = 8 + py*0.36909.
 // Na vista de costas o lado DIREITO da pessoa fica a DIREITA da tela
 // (figado e rim direito a direita; baco e rim esquerdo a esquerda).
+// A ilustracao original vinha com figado/baco trocados de lado: foi espelhada.
 // Nao aparecem nesta imagem: coracao, pancreas, tireoide, testiculos.
 export const ORGAOS_COSTAS: OrgaoImagem[] = [
-  { id: 'figado', sistema: 'figado', tambem: ['proteinas'], nome: 'Fígado', arquivo: '', proporcao: 1, caixa: { x: 168, y: 191, w: 40, h: 38 } },
-  { id: 'baco', sistema: 'sangue', nome: 'Baço', arquivo: '', proporcao: 1, caixa: { x: 113, y: 203, w: 12, h: 26 } },
-  { id: 'rimD', sistema: 'rins', nome: 'Rim direito', arquivo: '', proporcao: 1, caixa: { x: 168, y: 218, w: 26, h: 38 } },
-  { id: 'rimE', sistema: 'rins', nome: 'Rim esquerdo', arquivo: '', proporcao: 1, caixa: { x: 126, y: 218, w: 26, h: 38 } },
+  { id: 'figado', sistema: 'figado', tambem: ['proteinas'], nome: 'Fígado', arquivo: '', proporcao: 1, caixa: { x: 169, y: 224, w: 30, h: 28 } },
+  { id: 'baco', sistema: 'sangue', nome: 'Baço', arquivo: '', proporcao: 1, caixa: { x: 126, y: 236, w: 13, h: 25 } },
+  { id: 'rimD', sistema: 'rins', nome: 'Rim direito', arquivo: '', proporcao: 1, caixa: { x: 174, y: 257, w: 19, h: 26 } },
+  { id: 'rimE', sistema: 'rins', nome: 'Rim esquerdo', arquivo: '', proporcao: 1, caixa: { x: 129, y: 253, w: 18, h: 28 } },
   // Depois dos rins: ficam por cima deles e recebem o clique na sobreposicao.
-  { id: 'adrenalD', sistema: 'hormonios', nome: 'Suprarrenal direita', arquivo: '', proporcao: 1, caixa: { x: 172, y: 213, w: 14, h: 11 } },
-  { id: 'adrenalE', sistema: 'hormonios', nome: 'Suprarrenal esquerda', arquivo: '', proporcao: 1, caixa: { x: 131, y: 211, w: 14, h: 11 } },
-  { id: 'bexiga', sistema: 'rins', nome: 'Bexiga', arquivo: '', proporcao: 1, caixa: { x: 146, y: 302, w: 24, h: 20 } },
-  { id: 'prostata', sistema: 'prostata', nome: 'Próstata', arquivo: '', proporcao: 1, caixa: { x: 154, y: 321, w: 9, h: 11 } },
+  { id: 'adrenalD', sistema: 'hormonios', nome: 'Suprarrenal direita', arquivo: '', proporcao: 1, caixa: { x: 174, y: 246, w: 14, h: 12 } },
+  { id: 'adrenalE', sistema: 'hormonios', nome: 'Suprarrenal esquerda', arquivo: '', proporcao: 1, caixa: { x: 137, y: 243, w: 11, h: 12 } },
+  { id: 'bexiga', sistema: 'rins', nome: 'Bexiga', arquivo: '', proporcao: 1, caixa: { x: 151, y: 322, w: 20, h: 19 } },
+  { id: 'prostata', sistema: 'prostata', nome: 'Próstata', arquivo: '', proporcao: 1, caixa: { x: 156, y: 341, w: 10, h: 10 } },
 ]
 
 // ---------------------------------------------------------------------------
