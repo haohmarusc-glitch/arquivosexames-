@@ -69,6 +69,23 @@ export interface Sistema {
   fora: number
 }
 
+export interface EstudoImagem {
+  id: string
+  data: string | null
+  descricao: string
+  modalidades: string[]
+  series: number
+  imagens: number
+  visualizador: string
+  laudos: string[]
+}
+
+export interface RespostaImagens {
+  habilitado: boolean
+  erro?: string
+  estudos: EstudoImagem[]
+}
+
 export interface Estado<T> {
   dados: T | null
   erro: string | null

@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 
 from pathlib import Path
 
@@ -386,6 +387,107 @@ class UploadEndpointTests(unittest.TestCase):
                 os.environ.pop("ANALISADOR_UPLOAD_DIR", None)
                 os.environ.pop("ANALISADOR_RESULT_DIR", None)
                 importlib.reload(api)
+
+
+class ImagensApiTests(unittest.TestCase):
+    ESTUDOS = [
+        {"ID": "e1", "MainDicomTags": {"StudyDate": "20230228", "StudyDescription": "RM - COLUNA CERVICAL", "StudyInstanceUID": "1.2.3"}, "PatientMainDicomTags": {"PatientName": "PACIENTE"}},
+        {"ID": "e2", "MainDicomTags": {"StudyDate": "20251031", "StudyDescription": "", "StudyInstanceUID": "4.5.6"}},
+    ]
+    SERIES = [
+        {"ID": "s1", "ParentStudy": "e1", "MainDicomTags": {"Modality": "MR", "SeriesDescription": "SAG T2"}, "Instances": ["a", "b", "c"]},
+        {"ID": "s2", "ParentStudy": "e1", "MainDicomTags": {"Modality": "MR", "SeriesDescription": "AX T2"}, "Instances": ["d"]},
+        {"ID": "s3", "ParentStudy": "e2", "MainDicomTags": {"Modality": "US", "SeriesDescription": "PANTURRILHA"}, "Instances": ["e"]},
+    ]
+
+    def _api(self, url="http://orthanc:8042"):
+        import api
+        api.ORTHANC_URL = url
+        api._cache_imagens.update(quando=0.0, dados=None)
+        return api
+
+    def test_desligado_sem_url(self):
+        api = self._api("")
+        self.assertEqual(api.imagens(), {"habilitado": False, "estudos": []})
+
+    def test_lista_estudos_e_liga_laudo_do_dia(self):
+        api = self._api()
+        resp = {"/studies?expand": self.ESTUDOS, "/series?expand": self.SERIES}
+        with mock.patch.object(api, "_orthanc_get", side_effect=lambda c: resp[c]), \
+             mock.patch.object(api, "documentos", return_value=[{"arquivo": "Laudo_2023-02-28.pdf", "data": "2023-02-28"}]):
+            r = api.imagens()
+        self.assertTrue(r["habilitado"])
+        e2, e1 = r["estudos"]
+        self.assertEqual(e1["data"], "2023-02-28")
+        self.assertEqual((e1["series"], e1["imagens"], e1["modalidades"]), (2, 4, ["MR"]))
+        self.assertEqual(e1["laudos"], ["Laudo_2023-02-28.pdf"])
+        self.assertEqual(e1["visualizador"], "/ohif/viewer?StudyInstanceUIDs=1.2.3")
+        self.assertEqual(e2["descricao"], "PANTURRILHA")  # sem StudyDescription usa a serie
+        self.assertNotIn("PACIENTE", str(r))  # nada do paciente sai pela API
+
+    def test_orthanc_fora_do_ar(self):
+        import urllib.error
+        api = self._api()
+        with mock.patch.object(api, "_orthanc_get", side_effect=urllib.error.URLError("x")):
+            r = api.imagens()
+        self.assertIn("indisponível", r["erro"])
+
+
+def _tem_pydicom() -> bool:
+    try:
+        import pydicom  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+@unittest.skipUnless(_tem_pydicom(), "precisa do pydicom (pip install pydicom)")
+class ImportarImagensTests(unittest.TestCase):
+    def _dicom(self) -> bytes:
+        import io as _io
+        from pydicom.dataset import Dataset, FileMetaDataset
+        from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+        ds = Dataset()
+        fm = FileMetaDataset()
+        fm.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.4"
+        fm.MediaStorageSOPInstanceUID = generate_uid()
+        fm.TransferSyntaxUID = ExplicitVRLittleEndian
+        ds.file_meta = fm
+        ds.SOPClassUID, ds.SOPInstanceUID = fm.MediaStorageSOPClassUID, fm.MediaStorageSOPInstanceUID
+        ds.StudyInstanceUID, ds.SeriesInstanceUID = generate_uid(), generate_uid()
+        ds.PatientName = "SOUZA^JEFFERSON IRINEU DE"
+        ds.PatientID = "26032116"
+        ds.PatientBirthDate = "19760615"
+        ds.AccessionNumber = "3153968"
+        ds.StudyDate, ds.Modality, ds.StudyDescription = "20230228", "MR", "RM - COLUNA CERVICAL"
+        ds.ImageComments = "Paciente Jefferson Souza"
+        ds.ReferringPhysicianName = "HOFFMANN^CASSIANO"
+        ds.add_new(0x00091010, "LO", "SOUZA JEFFERSON")
+        buf = _io.BytesIO()
+        ds.save_as(buf, enforce_file_format=True)
+        return buf.getvalue()
+
+    def test_acha_dicom_em_zip_aninhado_e_ignora_resto(self):
+        import tempfile as _tf
+        import importar_imagens as I
+        dcm = self._dicom()
+        z = _zip({"DICOM/S1/IM0001": dcm, "DICOMDIR": b"x" * 200, "Viewer.exe": b"MZ" + b"0" * 300, "outro.zip": _zip({"IM2": dcm})})
+        with _tf.TemporaryDirectory() as d:
+            arq = Path(d) / "exame.zip"
+            arq.write_bytes(z)
+            nomes = [n for n, _ in I.encontrar_dicoms(arq)]
+        self.assertEqual(len(nomes), 2)
+
+    def test_anonimiza_sem_sobrar_nome(self):
+        import io as _io
+        import pydicom
+        import importar_imagens as I
+        ds = I.anonimizar(pydicom.dcmread(_io.BytesIO(self._dicom())))
+        texto = repr(ds).upper()
+        for proibido in ("JEFFERSON", "SOUZA", "26032116", "19760615", "3153968"):
+            self.assertNotIn(proibido, texto)
+        self.assertEqual(ds.StudyDescription, "RM - COLUNA CERVICAL")
+        self.assertEqual(str(ds.ReferringPhysicianName), "HOFFMANN^CASSIANO")
 
 if __name__ == "__main__":
     unittest.main()

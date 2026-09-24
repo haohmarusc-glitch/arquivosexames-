@@ -211,3 +211,87 @@ Para ter cópia no Drive, inclua no cron algo como
 Depois que `./executar_no_servidor.sh` atualiza `/srv/saude/painel/resultados.json`, o container ve a mudanca sozinho (volume montado, sem precisar reiniciar).
 
 No `/opt/premercado/Caddyfile`, acrescente um bloco `saude.{$DOMINIO}` com `basic_auth` (gere o hash com `docker run --rm -it caddy:2-alpine caddy hash-password`, nunca com `--plaintext` direto no comando) e `reverse_proxy saude-app:8502`, valide com `docker exec premercado-caddy-1 caddy validate --config /etc/caddy/Caddyfile` antes de `caddy reload`. Crie o registro DNS `saude` no Cloudflare com as mesmas opcoes do registro `kuma` existente.
+
+## Imagens (visualizador DICOM)
+
+A aba **Imagens** do painel lista os exames de imagem (raio-X, ressonância,
+ultrassom) e abre cada um no visualizador **OHIF** (zoom, contraste, régua,
+rolagem pelas fatias). As imagens ficam num **Orthanc** (servidor DICOM
+open source) em container próprio, na mesma rede do Caddy, sem porta pública.
+
+Privacidade: `importar_imagens.py` apaga nome, ID, nascimento, endereço,
+atendimento e tags privadas de cada DICOM **antes** de enviar ao Orthanc. Texto
+gravado nos pixels pelo aparelho (comum em ultrassom) não é removido — o site
+continua atrás do `basic_auth`.
+
+### 1. Subir o Orthanc
+
+```bash
+install -d -m 700 /srv/saude/orthanc
+docker run -d --name saude-orthanc --restart unless-stopped \
+  --network premercado_default \
+  -p 127.0.0.1:8042:8042 \
+  --memory 1g \
+  -e ORTHANC__NAME=saude \
+  -e ORTHANC__AUTHENTICATION_ENABLED=false \
+  -e ORTHANC__REMOTE_ACCESS_ALLOWED=true \
+  -e ORTHANC__DICOM_SERVER_ENABLED=false \
+  -e ORTHANC__STORAGE_COMPRESSION=true \
+  -e DICOM_WEB_PLUGIN_ENABLED=true \
+  -e OHIF_PLUGIN_ENABLED=true \
+  -e ORTHANC__DICOM_WEB__HOST=saude.premercadosc.com \
+  -e ORTHANC__DICOM_WEB__SSL=true \
+  -v /srv/saude/orthanc:/var/lib/orthanc/db \
+  orthancteam/orthanc:latest
+curl -s http://127.0.0.1:8042/system | head   # deve responder JSON
+```
+
+A porta 8042 fica só em 127.0.0.1 (para o importador); a internet só chega
+pelo Caddy, e só às rotas de leitura (`/ohif/*`, `/dicom-web/*`, método GET).
+Sem autenticação no Orthanc de propósito: ele não é alcançável de fora.
+
+### 2. Ligar a aba no painel
+
+Recrie o `saude-app` com mais uma variável:
+
+```bash
+-e ORTHANC_URL=http://saude-orthanc:8042
+```
+
+### 3. Caddy
+
+Dentro do bloco `saude.{$DOMINIO}` existente (depois do `basic_auth`,
+junto do `reverse_proxy saude-app:8502`):
+
+```caddy
+	@imagens {
+		path /ohif /ohif/* /dicom-web/*
+		method GET HEAD
+	}
+	handle @imagens {
+		reverse_proxy saude-orthanc:8042
+	}
+```
+
+Valide com `docker exec premercado-caddy-1 caddy validate --config /etc/caddy/Caddyfile` e faça `caddy reload`.
+
+### 4. Importar os zips
+
+```bash
+.venv/bin/pip install pydicom
+.venv/bin/python importar_imagens.py /srv/saude/imagens/Exame_2025-10-31_US_Articular.zip --simular   # só testa
+```
+
+O disco do VPS é pequeno: importe um zip por vez, guarde o original no Drive
+criptografado e apague a cópia local:
+
+```bash
+for z in /srv/saude/imagens/*.zip; do
+  .venv/bin/python importar_imagens.py "$z" \
+    && rclone copy "$z" saude-crypt:imagens/originais \
+    && rm "$z"
+  df -h /srv | tail -1
+done
+```
+
+Reimportar o mesmo zip não duplica nada.

@@ -4,11 +4,13 @@ import { VisaoGeral } from './pages/VisaoGeral'
 import { Evolucao } from './pages/Evolucao'
 import { AnatomiaPage } from './pages/AnatomiaPage'
 import { Documentos } from './pages/Documentos'
+import { Imagens } from './pages/Imagens'
 
 const NAV: { id: Pagina; rotulo: string; icone: string }[] = [
   { id: 'visao-geral', rotulo: 'Visão geral', icone: 'M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z' },
   { id: 'evolucao', rotulo: 'Evolução', icone: 'M3 17l5-5 4 4 8-9M15 7h5v5' },
   { id: 'anatomia', rotulo: 'Anatomia', icone: 'M12 4a2.2 2.2 0 1 0 0 .01M8 21l1.5-8L6 9.5 8 7h8l2 2.5-3.5 3.5L16 21' },
+  { id: 'imagens', rotulo: 'Imagens', icone: 'M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5M15.5 8.5h.01' },
   { id: 'documentos', rotulo: 'Documentos', icone: 'M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6' },
 ]
 
@@ -79,6 +81,7 @@ export default function App() {
         {rota.pagina === 'visao-geral' && <VisaoGeral resumo={resumo} />}
         {rota.pagina === 'evolucao' && <Evolucao marcadorInicial={rota.params.get('m')} />}
         {rota.pagina === 'anatomia' && <AnatomiaPage vistaInicial={rota.params.get('vista')} regiaoInicial={rota.params.get('r')} />}
+        {rota.pagina === 'imagens' && <Imagens />}
         {rota.pagina === 'documentos' && <Documentos />}
       </main>
     </div>

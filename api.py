@@ -15,6 +15,10 @@ import os
 import io
 import re
 import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import zipfile
 from collections import defaultdict
 from dataclasses import asdict
@@ -525,6 +529,73 @@ def remover_upload(arquivo: str) -> dict[str, Any]:
         if pdf.resolve().parent == (UPLOAD_DIR / "pdfs").resolve():
             pdf.unlink(missing_ok=True)
     return {"removido": arquivo}
+
+
+# ------------------------------------------------------------------ Imagens (Orthanc)
+
+ORTHANC_URL = os.environ.get("ORTHANC_URL", "").rstrip("/")
+_cache_imagens: dict[str, Any] = {"quando": 0.0, "dados": None}
+
+
+def _orthanc_get(caminho: str) -> Any:
+    with urllib.request.urlopen(ORTHANC_URL + caminho, timeout=10) as r:
+        return json.loads(r.read())
+
+
+def _data_dicom(valor: str | None) -> str | None:
+    v = (valor or "").strip()
+    return f"{v[:4]}-{v[4:6]}-{v[6:8]}" if len(v) >= 8 and v[:8].isdigit() else None
+
+
+@app.get("/api/imagens")
+def imagens() -> dict[str, Any]:
+    """Estudos de imagem guardados no Orthanc, com o link do visualizador OHIF
+    e os laudos do painel com a mesma data. Nao devolve nada do paciente."""
+    if not ORTHANC_URL:
+        return {"habilitado": False, "estudos": []}
+    agora = time.time()
+    if _cache_imagens["dados"] is not None and agora - _cache_imagens["quando"] < 30:
+        return _cache_imagens["dados"]
+    try:
+        estudos = _orthanc_get("/studies?expand")
+        series = _orthanc_get("/series?expand")
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return {"habilitado": True, "erro": f"Servidor de imagens indisponível ({type(exc).__name__}).", "estudos": []}
+
+    series_por_estudo: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for se in series:
+        tags = se.get("MainDicomTags", {})
+        series_por_estudo[se.get("ParentStudy")].append(
+            {"modalidade": tags.get("Modality", ""), "descricao": tags.get("SeriesDescription", ""), "imagens": len(se.get("Instances", []))}
+        )
+    try:
+        docs = documentos()
+    except Exception:  # sem resultados.json ainda: imagens continuam funcionando
+        docs = []
+    laudos_por_data: dict[str, list[str]] = defaultdict(list)
+    for d in docs:
+        if d.get("data"):
+            laudos_por_data[d["data"]].append(d["arquivo"])
+
+    saida = []
+    for es in estudos:
+        tags = es.get("MainDicomTags", {})
+        uid = tags.get("StudyInstanceUID", "")
+        data = _data_dicom(tags.get("StudyDate"))
+        ss = series_por_estudo.get(es.get("ID"), [])
+        saida.append({
+            "id": es.get("ID"),
+            "data": data,
+            "descricao": tags.get("StudyDescription", "") or ", ".join(sorted({s["descricao"] for s in ss if s["descricao"]}))[:120],
+            "modalidades": sorted({s["modalidade"] for s in ss if s["modalidade"]}),
+            "series": len(ss),
+            "imagens": sum(s["imagens"] for s in ss),
+            "visualizador": f"/ohif/viewer?StudyInstanceUIDs={urllib.parse.quote(uid)}",
+            "laudos": laudos_por_data.get(data or "", []),
+        })
+    resposta = {"habilitado": True, "estudos": sorted(saida, key=lambda e: e["data"] or "", reverse=True)}
+    _cache_imagens.update(quando=agora, dados=resposta)
+    return resposta
 
 
 # Frontend compilado (npm run build). Em desenvolvimento, o Vite serve o frontend.

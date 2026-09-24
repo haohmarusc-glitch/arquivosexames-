@@ -102,3 +102,13 @@ Code separado com uma ferramenta de imagem que esta sessao de chat nao tem.
 .venv/bin/python -m unittest
 cd frontend && npm run build && cd ..
 ```
+
+## Imagens DICOM (Orthanc + OHIF)
+- Container `saude-orthanc` (orthancteam/orthanc, plugins DicomWeb + OHIF) na
+  rede `premercado_default`, porta 8042 so em 127.0.0.1, dados em
+  `/srv/saude/orthanc`. Caddy repassa so GET/HEAD de `/ohif/*` e `/dicom-web/*`.
+- `importar_imagens.py` ANONIMIZA (pydicom) antes de enviar — nao enviar DICOM
+  ao Orthanc por outro caminho (ex.: upload pela UI /ui do Orthanc), senao o
+  nome do paciente vai junto. Texto queimado nos pixels nao e removido.
+- API: `GET /api/imagens` (precisa `ORTHANC_URL` no saude-app); frontend
+  `pages/Imagens.tsx`. Disco do VPS e pequeno: importar zip a zip e apagar.

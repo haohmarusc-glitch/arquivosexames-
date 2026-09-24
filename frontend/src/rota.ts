@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 
-export type Pagina = 'visao-geral' | 'evolucao' | 'anatomia' | 'documentos'
+export type Pagina = 'visao-geral' | 'evolucao' | 'anatomia' | 'imagens' | 'documentos'
 export interface Rota { pagina: Pagina; params: URLSearchParams }
 
-const PAGINAS: Pagina[] = ['visao-geral', 'evolucao', 'anatomia', 'documentos']
+const PAGINAS: Pagina[] = ['visao-geral', 'evolucao', 'anatomia', 'imagens', 'documentos']
 
 function ler(): Rota {
   const [caminho, busca = ''] = window.location.hash.replace(/^#\/?/, '').split('?')
