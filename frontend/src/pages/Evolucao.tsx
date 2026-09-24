@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useApi, type Marcador, type Serie, type Sistema } from '../api'
+import { useApi, type Conflito, type Marcador, type Serie, type Sistema } from '../api'
 import { BadgeClassificacao } from '../components/Badges'
 import { GraficoMarcador, Legenda, variacao } from '../components/GraficoMarcador'
 import { Aviso, Carregando, Painel } from '../components/Painel'
@@ -31,6 +31,7 @@ export function Evolucao({ marcadorInicial }: { marcadorInicial: string | null }
   }, [sistemas.dados, marcadores.dados, filtro])
 
   const v = serie.dados ? variacao(serie.dados.pontos) : null
+  const datasConflito = new Set((serie.dados?.conflitos ?? []).map((c) => c.data))
 
   return (
     <div className="space-y-6 px-4 py-8 lg:px-10">
@@ -76,6 +77,7 @@ export function Evolucao({ marcadorInicial }: { marcadorInicial: string | null }
                 )}
                 <GraficoMarcador pontos={serie.dados.pontos} altura={320} />
                 <Legenda pontos={serie.dados.pontos} />
+                {Boolean(serie.dados.conflitos?.length) && <AvisoConflitos conflitos={serie.dados.conflitos ?? []} />}
               </Painel>
 
               <Painel titulo="Medições">
@@ -93,7 +95,10 @@ export function Evolucao({ marcadorInicial }: { marcadorInicial: string | null }
                     <tbody>
                       {[...serie.dados.pontos].reverse().map((p, i) => (
                         <tr key={`${p.data}-${p.arquivo}-${i}`} className="border-b border-line/70 last:border-0">
-                          <td className="px-5 py-2.5 whitespace-nowrap tabular-nums">{fmtData(p.data)}</td>
+                          <td className="px-5 py-2.5 whitespace-nowrap tabular-nums">
+                            {fmtData(p.data)}
+                            {p.coleta_hora && datasConflito.has(p.data) && <span className="ml-1 text-xs text-muted">{p.coleta_hora}</span>}
+                          </td>
                           <td className="px-3 py-2.5 text-right font-semibold whitespace-nowrap tabular-nums">{fmtNum(p.valor)} <span className="font-normal text-muted">{p.unidade}</span></td>
                           <td className="px-3 py-2.5 text-muted">{fmtReferencia(p.ref_min, p.ref_max, p.unidade)}</td>
                           <td className="px-3 py-2.5"><BadgeClassificacao valor={p.classificacao} /></td>
@@ -108,6 +113,37 @@ export function Evolucao({ marcadorInicial }: { marcadorInicial: string | null }
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Datas com mais de um valor: o grafico mostra um so, aqui aparecem os outros. */
+function AvisoConflitos({ conflitos }: { conflitos: Conflito[] }) {
+  return (
+    <div className="mt-4 rounded-xl border border-line bg-canvas px-4 py-3 text-sm">
+      <p className="font-semibold">
+        {conflitos.length === 1 ? 'Uma data tem' : `${conflitos.length} datas têm`} mais de um valor. O gráfico mostra um por dia:
+      </p>
+      <ul className="mt-2 space-y-1.5 text-muted">
+        {conflitos.map((c) => (
+          <li key={c.data}>
+            <span className="font-medium text-ink">{fmtData(c.data)}:</span>{' '}
+            {c.valores.map((x, i) => (
+              <span key={i}>
+                {i > 0 && ' · '}
+                <span className={x.no_grafico ? 'font-semibold text-ink' : ''}>
+                  {fmtNum(x.valor)} {x.unidade}
+                </span>
+                {x.coleta_hora && ` (coleta ${x.coleta_hora})`}
+                {x.no_grafico ? ' — no gráfico' : ''}
+              </span>
+            ))}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs text-muted">
+        Quando há duas coletas no mesmo dia, o gráfico usa a mais recente. Confira no laudo original.
+      </p>
     </div>
   )
 }

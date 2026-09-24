@@ -300,6 +300,7 @@ def serie(marcador_id: str) -> dict[str, Any]:
             "classificacao": r["classificacao"],
             "arquivo": r["arquivo"],
             "arquivos": r.get("arquivos") or [r["arquivo"]],
+            "coleta_hora": r.get("coleta_hora", ""),
         }
         for r in dados["resultados"]
         if r["exame_id"] == marcador_id and _no_grafico(r) and r.get("data")
@@ -308,7 +309,8 @@ def serie(marcador_id: str) -> dict[str, Any]:
         raise HTTPException(404, "Marcador sem valores numéricos datados.")
     pontos.sort(key=lambda p: p["data"])
     exemplo = next(r for r in dados["resultados"] if r["exame_id"] == marcador_id)
-    return {"id": marcador_id, "nome": exemplo["exame_nome"], "sistema": exemplo["sistema"], "pontos": pontos}
+    conflitos = [c for c in dados.get("conflitos", []) if c["exame_id"] == marcador_id]
+    return {"id": marcador_id, "nome": exemplo["exame_nome"], "sistema": exemplo["sistema"], "pontos": pontos, "conflitos": conflitos}
 
 
 @app.get("/api/conflitos")

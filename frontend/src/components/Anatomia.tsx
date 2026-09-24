@@ -149,7 +149,7 @@ function OrganCostasCamadas({ o, ativo, alerta, esmaecido, onSelecionar }: { o: 
 
 export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao = 'frente', estiloFrente = 'composta', estiloCostas = 'composta' }: PropsOrgaos) {
   // Sistemas sem orgao proprio na figura: selecionar um deles nao esmaece os orgaos.
-  const naoOrgao = ['inflamacao', 'vitaminas', 'outros']
+  const naoOrgao = ['inflamacao', 'vitaminas', 'sorologias', 'outros']
   const destaca = (o: { sistema: string; tambem?: string[] }) => selecionado === o.sistema || Boolean(selecionado && o.tambem?.includes(selecionado))
   const esmaecer = (o: { sistema: string; tambem?: string[] }) => Boolean(selecionado) && !destaca(o) && !naoOrgao.includes(selecionado ?? '')
 

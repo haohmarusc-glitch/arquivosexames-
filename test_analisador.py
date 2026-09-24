@@ -1069,3 +1069,52 @@ class EnviadosNaAnaliseTests(unittest.TestCase):
                 os.environ.pop("ANALISADOR_RESULT_DIR", None)
                 os.environ.pop("ANALISADOR_UPLOAD_DIR", None)
                 importlib.reload(api)
+
+
+class SorologiasECariotipoTests(unittest.TestCase):
+    def test_sorologias_tem_nome_e_sistema(self):
+        casos = {
+            "ANTICORPO ANTI HBC IGM - Indice": ("anti_hbc_igm_indice", "figado"),
+            "ANTI-HBC TOTAL": ("anti_hbc", "figado"),
+            "SOROLOGIA PARA SIFILIS - Indice": ("sifilis_indice", "sorologias"),
+            "VDRL": ("sifilis", "sorologias"),
+            "HIV 1 E 2": ("hiv", "sorologias"),
+            "TOXOPLASMOSE IGM": ("toxoplasmose_igm", "sorologias"),
+            "TOXOPLASMOSE IGG": ("toxoplasmose_igg", "sorologias"),
+            "Hepatite A IgM": ("anti_hav_igm", "figado"),
+        }
+        for titulo, (mid, sistema) in casos.items():
+            self.assertEqual((identificar(titulo)[0], identificar(titulo)[2]), (mid, sistema), titulo)
+        self.assertNotEqual(identificar("ANTI-HBS")[0], identificar("ANTI-HBC")[0])
+
+    def test_metafases_ficam_fora_do_grafico(self):
+        rs, _ = A.consolidar([_r(exame="Metáfases Contadas", valor_numerico=20.0, unidade="", ref_min=None, ref_max=None)])
+        self.assertEqual(rs[0]["exame_id"], "cariotipo_metafases_contadas")
+        self.assertFalse(rs[0]["grafico"])
+
+
+class ConflitosNaSerieTests(unittest.TestCase):
+    def test_serie_traz_conflitos_e_hora_da_coleta(self):
+        import importlib
+        import json as _json
+        import os
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as res:
+            dados = {"arquivos": [], "achados": [], "resultados": [
+                _r(arquivo="x.pdf", exame="Hemoglobina", valor_numerico=17.2, unidade="g/dL", data="2024-05-01", coleta_hora="18:53"),
+                _r(arquivo="x.pdf", exame="Hemoglobina", valor_numerico=15.5, unidade="g/dL", data="2024-05-01", coleta_hora="20:35"),
+                _r(arquivo="y.pdf", exame="Hemoglobina", valor_numerico=15.0, unidade="g/dL", data="2025-01-01"),
+            ]}
+            (Path(res) / "resultados.json").write_text(_json.dumps(dados), encoding="utf-8")
+            os.environ["ANALISADOR_RESULT_DIR"] = res
+            import api
+            api = importlib.reload(api)
+            try:
+                s = api.serie("hemoglobina")
+                self.assertEqual([p["valor"] for p in s["pontos"]], [15.5, 15.0])
+                self.assertEqual(s["pontos"][0]["coleta_hora"], "20:35")
+                self.assertEqual(len(s["conflitos"]), 1)
+                self.assertEqual({(v["valor"], v["no_grafico"]) for v in s["conflitos"][0]["valores"]}, {(15.5, True), (17.2, False)})
+            finally:
+                os.environ.pop("ANALISADOR_RESULT_DIR", None)
+                importlib.reload(api)

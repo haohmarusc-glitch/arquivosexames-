@@ -55,6 +55,15 @@ export interface Ponto {
   classificacao: Classificacao
   arquivo: string
   arquivos?: string[]
+  coleta_hora?: string
+}
+
+/** Mesmo marcador e data com valores diferentes (ex.: duas coletas no dia). */
+export interface Conflito {
+  exame_id: string
+  data: string
+  escolhido: number
+  valores: { valor: number; unidade: string; coleta_hora?: string; arquivos: string[]; no_grafico: boolean }[]
 }
 
 export interface Serie {
@@ -62,6 +71,7 @@ export interface Serie {
   nome: string
   sistema: string
   pontos: Ponto[]
+  conflitos?: Conflito[]
 }
 
 export interface Sistema {

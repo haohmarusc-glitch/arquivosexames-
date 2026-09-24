@@ -111,6 +111,11 @@ Roda no analisador E na API (sobre o JSON + envios), e idempotente:
 - (marcador, data, valor) repetido vira um registro com `arquivos` = todos os PDFs;
   valores diferentes na mesma data vao para `conflitos.json` (`/api/conflitos`)
   e so um fica no grafico.
+- `/api/marcadores/{id}` traz `conflitos` da serie; a tela Evolucao mostra as
+  datas com mais de um valor (e a hora de cada coleta) abaixo do grafico.
+- `mapa_exames.NAO_MARCADORES`: contagens tecnicas (metafases do cariotipo) ficam
+  na tabela, fora do grafico. Sistema `sorologias` (sifilis, HIV, toxo...) nao tem
+  orgao na Anatomia (`naoOrgao` em Anatomia.tsx).
 - `classificacao` sai SO de `ref_min`/`ref_max` (faixas que discordam -> ambos None).
 - Unidade: `unidade_valida()` rejeita texto do laudo; senao a da referencia; por
   ultimo `UNIDADE_PADRAO` (`unidade_fonte="padrao"`, so exibicao).
