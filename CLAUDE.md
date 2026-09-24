@@ -27,6 +27,10 @@ achados de laudos de imagem (coluna, articulacoes). Uso pessoal do Jefferson.
 - Dados ficam em `/srv/saude/painel/resultados.json` (gerado por
   `executar_no_servidor.sh`, que baixa o zip do rclone, roda o analisador e
   criptografa o resultado). Nunca commitar esse arquivo nem os PDFs.
+- `executar_no_servidor.sh` tambem copia `/srv/saude/uploads/pdfs` para
+  `saude-crypt:exames/enviados/` (so `rclone copy`, nunca `sync`: perder o disco
+  nao pode apagar o backup) e passa a pasta ao analisador com `--enviados`
+  (`ExamFile.origem="envio"`). A API esconde envio cujo PDF sumiu da pasta.
 - `.env` (fora do Git) pode ter `ANALISADOR_SEXO=M`, usado para escolher a
   faixa certa em tabelas de referencia que variam por sexo/idade.
 

@@ -204,6 +204,15 @@ o analisador principal ja tenha (mesmo sha256, mesmo texto ou mesmo nome).
 Cada marcador vai para o sistema definido em `mapa_exames.py`, e a tela mostra
 para onde foi cada exame. "Desfazer" remove só o que foi enviado pelo painel.
 
+Na execucao mensal (`executar_no_servidor.sh`), os PDFs de
+`/srv/saude/uploads/pdfs/` sao copiados para `saude-crypt:exames/enviados/`
+(`rclone copy`: so acrescenta, nunca apaga no remoto) e entram na analise
+principal junto com o zip (`--enviados`). Um envio igual a um laudo do zip vira
+"duplicado". Um envio desfeito no painel sai da pasta e da analise (a API ja o
+esconde antes da proxima execucao), mas a copia no rclone fica como backup.
+Para restaurar os envios num servidor novo:
+`rclone copy saude-crypt:exames/enviados /srv/saude/uploads/pdfs` e rodar o script.
+
 Antes de recriar o container: `install -d -m 700 /srv/saude/uploads`.
 Sem `ANALISADOR_UPLOAD_DIR` o envio fica desligado (a caixa explica isso).
 Para ter cópia no Drive, inclua no cron algo como

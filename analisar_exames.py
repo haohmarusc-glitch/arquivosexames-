@@ -64,6 +64,7 @@ class ExamFile:
     duplicado_de: str | None = None
     aviso: str = ""
     hash_texto: str = ""  # sha256 do texto normalizado, usado para detectar o mesmo laudo com bytes diferentes
+    origem: str = ""  # "envio": veio da pasta de PDFs enviados pelo painel (--enviados)
 
 
 @dataclass
@@ -908,6 +909,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Organiza exames PDF localmente")
     parser.add_argument("origem", type=Path, help="Pasta, PDF ou ZIP")
     parser.add_argument("--saida", type=Path, default=Path("resultado"))
+    parser.add_argument("--enviados", type=Path, help="Pasta com os PDFs enviados pelo painel (entram depois da origem)")
     parser.add_argument("--sexo", choices=["M", "F"], default=os.environ.get("ANALISADOR_SEXO") or None,
                         help="Escolhe a faixa de referencia certa em tabelas por sexo (ou ANALISADOR_SEXO)")
     args = parser.parse_args()
@@ -921,15 +923,20 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="exames_") as temp:
         try:
-            pdfs = find_pdfs(args.origem, Path(temp))
+            (Path(temp) / "origem").mkdir()
+            pdfs = [(p, "") for p in find_pdfs(args.origem, Path(temp) / "origem")]
+            if args.enviados and args.enviados.is_dir():
+                # Depois da origem: um envio igual a um laudo do zip vira "duplicado".
+                pdfs += [(p, "envio") for p in sorted(args.enviados.glob("*.pdf")) if not p.name.startswith(".")]
         except Exception as exc:
             parser.error(str(exc))
         if not pdfs:
             parser.error("Nenhum PDF encontrado")
         vistos: dict[str, str] = {}
-        for pdf in pdfs:
+        for pdf, origem in pdfs:
             try:
                 item, novos, achados_pdf = analisar_pdf(pdf, vistos)
+                item.origem = origem
                 files.append(item)
                 results.extend(novos)
                 findings.extend(achados_pdf)

@@ -10,6 +10,9 @@ BASE_DIR="${ANALISADOR_BASE_DIR:-/srv/saude/processamento}"
 REMOTE_SOURCE="${ANALISADOR_REMOTE_SOURCE:-saude-crypt:exames/Exames_Unimed_2023-2026.zip}"
 REMOTE_OUTPUT="${ANALISADOR_REMOTE_OUTPUT:-saude-crypt:historico/ultima-analise}"
 LOCAL_PANEL_DIR="${ANALISADOR_PANEL_DIR:-/srv/saude/painel}"
+# PDFs enviados pelo painel (volume /uploads do container saude-app)
+UPLOADS_PDF_DIR="${ANALISADOR_UPLOADS_PDF_DIR:-/srv/saude/uploads/pdfs}"
+REMOTE_ENVIADOS="${ANALISADOR_REMOTE_ENVIADOS:-saude-crypt:exames/enviados}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RUN_DIR="$(mktemp -d "$BASE_DIR.XXXXXX")"
 
@@ -28,8 +31,18 @@ if [[ ! -d "$SCRIPT_DIR/.venv" ]]; then
   "$SCRIPT_DIR/.venv/bin/pip" install -r "$SCRIPT_DIR/requirements.txt"
 fi
 
+# Envios pelo painel: copia para o rclone (so acrescenta, nunca apaga la) e
+# entra na analise. Um envio desfeito some da pasta e sai da analise, mas a
+# copia no rclone fica como backup.
+ENVIADOS=()
+if compgen -G "$UPLOADS_PDF_DIR/*.pdf" > /dev/null; then
+  rclone copy "$UPLOADS_PDF_DIR" "$REMOTE_ENVIADOS" --include "*.pdf" --exclude ".*"
+  ENVIADOS=(--enviados "$UPLOADS_PDF_DIR")
+  echo "Envios pelo painel copiados para $REMOTE_ENVIADOS"
+fi
+
 "$SCRIPT_DIR/.venv/bin/python" "$SCRIPT_DIR/analisar_exames.py" \
-  "$RUN_DIR/entrada/exames.zip" --saida "$RUN_DIR/resultado"
+  "$RUN_DIR/entrada/exames.zip" --saida "$RUN_DIR/resultado" "${ENVIADOS[@]}"
 
 rclone copy "$RUN_DIR/resultado" "$REMOTE_OUTPUT" --create-empty-src-dirs
 rclone check "$RUN_DIR/resultado" "$REMOTE_OUTPUT" --one-way --download

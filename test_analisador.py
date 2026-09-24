@@ -1017,3 +1017,55 @@ class VerificarGraficosTests(unittest.TestCase):
             finally:
                 os.environ.pop("ANALISADOR_RESULT_DIR", None)
                 importlib.reload(api)
+
+
+class EnviadosNaAnaliseTests(unittest.TestCase):
+    """Envios pelo painel entram na analise principal (--enviados) e o desfeito some da API."""
+
+    def test_cli_inclui_enviados_e_marca_repetido(self):
+        import json as _json
+        import sys as _sys
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            zip_path = tmp / "exames.zip"
+            zip_path.write_bytes(_zip({"exame_a.pdf": _pdf_simples("Data do exame: 10/03/2024 Laudo A")}))
+            enviados = tmp / "pdfs"
+            enviados.mkdir()
+            (enviados / "copia_a.pdf").write_bytes(_pdf_simples("Data do exame: 10/03/2024 Laudo A"))
+            (enviados / "laudo_b.pdf").write_bytes(_pdf_simples("Data do exame: 31/05/2025 Laudo B"))
+            (enviados / ".envio-tmp.pdf").write_bytes(b"%PDF lixo")
+            with mock.patch.object(_sys, "argv", ["x", str(zip_path), "--saida", str(tmp / "out"), "--enviados", str(enviados)]), \
+                    mock.patch("sys.stdout", new_callable=io.StringIO):
+                self.assertEqual(A.main(), 0)
+            arquivos = {a["arquivo"]: a for a in _json.loads((tmp / "out" / "resultados.json").read_text())["arquivos"]}
+            self.assertEqual(set(arquivos), {"exame_a.pdf", "copia_a.pdf", "laudo_b.pdf"})
+            self.assertEqual(arquivos["exame_a.pdf"]["origem"], "")
+            self.assertEqual((arquivos["copia_a.pdf"]["tipo"], arquivos["copia_a.pdf"]["duplicado_de"]), ("duplicado", "exame_a.pdf"))
+            self.assertEqual((arquivos["laudo_b.pdf"]["origem"], arquivos["laudo_b.pdf"]["data"]), ("envio", "2025-05-31"))
+
+    def test_api_esconde_envio_desfeito(self):
+        import importlib
+        import json as _json
+        import os
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as res, _tf.TemporaryDirectory() as up:
+            (Path(up) / "pdfs").mkdir()
+            (Path(up) / "pdfs" / "ainda_la.pdf").write_bytes(b"%PDF")
+            dados = {"achados": [{"arquivo": "desfeito.pdf", "regiao": "renal", "data": "2025-05-31"}], "resultados": [
+                _r(arquivo="ainda_la.pdf"), _r(arquivo="desfeito.pdf", data="2025-02-01")], "arquivos": [
+                {"arquivo": "ainda_la.pdf", "tipo": "laboratorial", "data": "2025-01-01", "origem": "envio"},
+                {"arquivo": "desfeito.pdf", "tipo": "laboratorial", "data": "2025-02-01", "origem": "envio"}]}
+            (Path(res) / "resultados.json").write_text(_json.dumps(dados), encoding="utf-8")
+            os.environ["ANALISADOR_RESULT_DIR"], os.environ["ANALISADOR_UPLOAD_DIR"] = res, up
+            import api
+            api = importlib.reload(api)
+            try:
+                docs = api.documentos()
+                self.assertEqual([(d["arquivo"], d["origem"]) for d in docs], [("ainda_la.pdf", "upload")])
+                self.assertEqual(api.achados(), [])
+                self.assertEqual(len(api.serie("glicose")["pontos"]), 1)
+            finally:
+                os.environ.pop("ANALISADOR_RESULT_DIR", None)
+                os.environ.pop("ANALISADOR_UPLOAD_DIR", None)
+                importlib.reload(api)
