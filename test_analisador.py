@@ -267,6 +267,126 @@ class UploadMesclaTests(unittest.TestCase):
         self.assertEqual(api._nome_seguro("../../etc/passwd"), "passwd.pdf")
         self.assertEqual(api._nome_seguro("Exame João 01.pdf"), "Exame_Jo_o_01.pdf")
 
+
+def _pdf_simples(texto: str) -> bytes:
+    """PDF minimo valido com uma linha de texto (sem dependencias externas)."""
+    import io as _io
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+    w = PdfWriter()
+    pagina = w.add_blank_page(width=300, height=200)
+    fonte = DictionaryObject({NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"), NameObject("/BaseFont"): NameObject("/Helvetica")})
+    pagina[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): w._add_object(fonte)})})
+    conteudo = DecodedStreamObject()
+    conteudo.set_data(f"BT /F1 10 Tf 20 150 Td ({texto}) Tj ET".encode("latin-1"))
+    pagina[NameObject("/Contents")] = w._add_object(conteudo)
+    buf = _io.BytesIO()
+    w.write(buf)
+    return buf.getvalue()
+
+
+def _zip(arquivos: dict[str, bytes]) -> bytes:
+    import io as _io
+    import zipfile as _zf
+    buf = _io.BytesIO()
+    with _zf.ZipFile(buf, "w") as z:
+        for nome, dados in arquivos.items():
+            z.writestr(nome, dados)
+    return buf.getvalue()
+
+
+class ExpandirUploadTests(unittest.TestCase):
+    def test_pdf_passa_direto(self):
+        import api
+        pdf = _pdf_simples("Laudo 01/02/2024")
+        pdfs, avisos = api._expandir("a.pdf", pdf)
+        self.assertEqual([n for n, _ in pdfs], ["a.pdf"])
+        self.assertEqual(avisos, [])
+
+    def test_zip_com_pdfs_em_subpasta_e_lixo(self):
+        import api
+        z = _zip({"laudos/Laudo_1.pdf": _pdf_simples("um"), "Laudo_2.PDF": _pdf_simples("dois"),
+                  "__MACOSX/._Laudo_1.pdf": b"x", "leia.txt": b"oi", "IM0001": b"\0" * 128 + b"DICM"})
+        pdfs, avisos = api._expandir("Laudos.zip", z)
+        self.assertEqual(sorted(n for n, _ in pdfs), ["Laudo_1.pdf", "Laudo_2.PDF"])
+        self.assertEqual(avisos[0]["status"], "info")
+        self.assertIn("DICOM", avisos[0]["erro"])
+
+    def test_zip_dentro_de_zip(self):
+        import api
+        interno = _zip({"x.pdf": _pdf_simples("x")})
+        pdfs, _ = api._expandir("fora.zip", _zip({"dentro.zip": interno}))
+        self.assertEqual([n for n, _ in pdfs], ["x.pdf"])
+
+    def test_zip_so_dicom_explica(self):
+        import api
+        pdfs, avisos = api._expandir("Exame_RM.zip", _zip({"DICOM/IM0001": b"\0" * 128 + b"DICM", "DICOMDIR": b"x"}))
+        self.assertEqual(pdfs, [])
+        self.assertIn("DICOM", avisos[0]["erro"])
+
+    def test_formatos_recusados_com_motivo(self):
+        import api
+        casos = {"foto.jpg": b"\xff\xd8\xff", "laudo.docx": b"PK\x03\x04lixo", "img.dcm": b"\0" * 128 + b"DICM", "x.bin": b"abc"}
+        for nome, dados in casos.items():
+            with self.subTest(nome=nome):
+                pdfs, avisos = api._expandir(nome, dados)
+                self.assertEqual(pdfs, [])
+                self.assertEqual(avisos[0]["status"], "erro")
+                self.assertTrue(avisos[0]["erro"])
+
+    def test_zip_bomb_barrado(self):
+        import api
+        antigo = api.MAX_ZIP_TOTAL
+        api.MAX_ZIP_TOTAL = 1000
+        try:
+            pdfs, avisos = api._expandir("grande.zip", _zip({"a.pdf": b"%PDF" + b"0" * 5000}))
+        finally:
+            api.MAX_ZIP_TOTAL = antigo
+        self.assertEqual(pdfs, [])
+        self.assertIn("grande demais", avisos[0]["erro"])
+
+
+def _tem_httpx() -> bool:
+    try:
+        import httpx  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+@unittest.skipUnless(_tem_httpx(), "precisa do httpx (pip install httpx) para o TestClient")
+class UploadEndpointTests(unittest.TestCase):
+    def test_envio_de_zip_pela_api(self):
+        import importlib
+        import os
+        import tempfile as _tf
+        from fastapi.testclient import TestClient
+        with _tf.TemporaryDirectory() as up, _tf.TemporaryDirectory() as res:
+            os.environ["ANALISADOR_UPLOAD_DIR"] = up
+            os.environ["ANALISADOR_RESULT_DIR"] = res
+            import api
+            api = importlib.reload(api)
+            try:
+                c = TestClient(api.app)
+                z = _zip({"Laudo_A.pdf": _pdf_simples("Data do exame: 10/03/2024 Laudo A"),
+                          "Laudo_B.pdf": _pdf_simples("Data do exame: 11/03/2024 Laudo B"),
+                          "foto.jpg": b"\xff\xd8"})
+                r = c.post("/api/upload", files=[("arquivos", ("Laudos.zip", z, "application/zip")),
+                                                  ("arquivos", ("RM.zip", _zip({"IM1": b"\0" * 128 + b"DICM"}), "application/zip"))])
+                self.assertEqual(r.status_code, 200)
+                envios = r.json()["envios"]
+                adicionados = [e["arquivo"] for e in envios if e["status"] == "adicionado"]
+                self.assertEqual(sorted(adicionados), ["Laudo_A.pdf", "Laudo_B.pdf"])
+                self.assertTrue(any(e["arquivo"] == "RM.zip" and e["status"] == "erro" for e in envios))
+                self.assertTrue((Path(up) / "pdfs" / "Laudo_A.pdf").exists())
+                # reenviar o mesmo zip nao duplica
+                r2 = c.post("/api/upload", files=[("arquivos", ("Laudos.zip", z, "application/zip"))])
+                self.assertTrue(all(e["status"] in ("duplicado", "info") for e in r2.json()["envios"]))
+            finally:
+                os.environ.pop("ANALISADOR_UPLOAD_DIR", None)
+                os.environ.pop("ANALISADOR_RESULT_DIR", None)
+                importlib.reload(api)
+
 if __name__ == "__main__":
     unittest.main()
 

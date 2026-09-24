@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import json
 import os
+import io
 import re
 import tempfile
+import zipfile
 from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
@@ -356,6 +358,88 @@ def upload_status() -> dict[str, Any]:
     return {"habilitado": UPLOAD_DIR is not None, "limite_mb": MAX_UPLOAD // (1024 * 1024)}
 
 
+# Limites para ZIPs enviados pelo painel (protecao contra "zip bomb").
+MAX_ZIP_MEMBROS = 500
+MAX_ZIP_TOTAL = int(os.environ.get("ANALISADOR_ZIP_MAX_MB", "300")) * 1024 * 1024
+_EXT_IMAGEM = (".dcm", ".dicom", ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".heic")
+
+
+def _motivo_recusa(nome: str, conteudo: bytes) -> str:
+    """Mensagem clara para arquivos que nao sao PDF nem ZIP."""
+    baixo = nome.lower()
+    if conteudo[128:132] == b"DICM" or baixo.endswith((".dcm", ".dicom")):
+        return "Imagem DICOM (raio-X, ressonância…): o painel lê só o texto dos laudos. Envie o PDF do laudo desse exame."
+    if baixo.endswith(_EXT_IMAGEM):
+        return "Foto/imagem não é lida. Envie o laudo em PDF."
+    if baixo.endswith((".doc", ".docx", ".odt", ".txt", ".rtf")):
+        return "Formato de documento não suportado. Salve/exporte como PDF e envie de novo."
+    return "Formato não suportado. Envie PDF de laudo ou um .zip com PDFs dentro."
+
+
+def _expandir(nome: str, conteudo: bytes) -> tuple[list[tuple[str, bytes]], list[dict[str, Any]]]:
+    """Transforma um arquivo enviado em uma lista de PDFs (nome, bytes).
+
+    - PDF: ele mesmo.
+    - ZIP: todos os PDFs de dentro (inclusive em subpastas e em ZIPs dentro do
+      ZIP, um nivel). Outros arquivos do ZIP sao ignorados e contados.
+    - Outros: vira um erro com explicacao.
+    """
+    if conteudo.startswith(b"%PDF"):
+        return [(nome, conteudo)], []
+    if not conteudo.startswith(b"PK"):
+        return [], [{"arquivo": nome, "status": "erro", "erro": _motivo_recusa(nome, conteudo)}]
+
+    pdfs: list[tuple[str, bytes]] = []
+    erros: list[dict[str, Any]] = []
+    ignorados = dicom = 0
+
+    def ler_zip(dados: bytes, profundidade: int) -> None:
+        nonlocal ignorados, dicom
+        with zipfile.ZipFile(io.BytesIO(dados)) as z:
+            membros = [m for m in z.infolist() if not m.is_dir()]
+            if len(membros) > MAX_ZIP_MEMBROS:
+                raise ValueError(f"ZIP com arquivos demais (máximo {MAX_ZIP_MEMBROS}).")
+            if sum(m.file_size for m in membros) > MAX_ZIP_TOTAL:
+                raise ValueError(f"ZIP grande demais depois de descompactado (máximo {MAX_ZIP_TOTAL // (1024 * 1024)} MB).")
+            for m in membros:
+                base = Path(m.filename).name
+                baixo = base.lower()
+                if base.startswith(".") or "__MACOSX" in m.filename:
+                    continue
+                if baixo.endswith(".pdf"):
+                    if m.file_size > MAX_UPLOAD:
+                        erros.append({"arquivo": base, "status": "erro", "erro": f"PDF maior que {MAX_UPLOAD // (1024 * 1024)} MB dentro do ZIP."})
+                    else:
+                        pdfs.append((base, z.read(m)))
+                elif baixo.endswith(".zip") and profundidade == 0 and m.file_size <= MAX_ZIP_TOTAL:
+                    ler_zip(z.read(m), 1)
+                elif baixo.endswith((".dcm", ".dicom")) or "." not in base:
+                    dicom += 1  # DICOM costuma vir sem extensao
+                else:
+                    ignorados += 1
+
+    try:
+        ler_zip(conteudo, 0)
+    except (zipfile.BadZipFile, ValueError, RuntimeError) as exc:
+        msg = str(exc) if isinstance(exc, ValueError) else "ZIP corrompido ou protegido por senha."
+        return [], [{"arquivo": nome, "status": "erro", "erro": msg}]
+
+    if not pdfs and not erros:
+        if dicom:
+            erro = "Esse ZIP só tem imagens DICOM (raio-X, ressonância…), sem laudo em PDF. O painel lê o texto dos laudos — envie o PDF do laudo."
+        else:
+            erro = "Nenhum PDF encontrado dentro do ZIP."
+        erros.append({"arquivo": nome, "status": "erro", "erro": erro})
+    elif dicom or ignorados:
+        partes = []
+        if dicom:
+            partes.append(f"{dicom} imagem(ns) DICOM")
+        if ignorados:
+            partes.append(f"{ignorados} arquivo(s) que não são PDF")
+        erros.append({"arquivo": nome, "status": "info", "erro": f"{len(pdfs)} PDF(s) lidos do ZIP; ignorados: {', '.join(partes)}."})
+    return pdfs, erros
+
+
 @app.post("/api/upload")
 async def upload(arquivos: list[UploadFile] = File(...)) -> dict[str, Any]:
     if UPLOAD_DIR is None:
@@ -373,48 +457,52 @@ async def upload(arquivos: list[UploadFile] = File(...)) -> dict[str, Any]:
         mudou = False
 
         for enviado in arquivos:
-            nome = _nome_seguro(enviado.filename or "")
+            original = Path(enviado.filename or "arquivo").name
             conteudo = await enviado.read(MAX_UPLOAD + 1)
             if len(conteudo) > MAX_UPLOAD:
-                saida.append({"arquivo": nome, "status": "erro", "erro": f"Arquivo maior que {MAX_UPLOAD // (1024 * 1024)} MB."})
+                saida.append({"arquivo": original, "status": "erro", "erro": f"Arquivo maior que {MAX_UPLOAD // (1024 * 1024)} MB."})
                 continue
-            if not conteudo.startswith(b"%PDF"):
-                saida.append({"arquivo": nome, "status": "erro", "erro": "Não é um PDF."})
-                continue
-            fd, tmp = tempfile.mkstemp(dir=pasta_pdfs, prefix=".envio-", suffix=".pdf")
-            os.write(fd, conteudo)
-            os.close(fd)
-            tmp_path = Path(tmp)
-            try:
-                digest = analisar_exames.sha256(tmp_path)
-                if digest in shas:
-                    saida.append({"arquivo": nome, "status": "duplicado", "igual_a": shas[digest]})
-                    tmp_path.unlink()
+            pdfs, avisos = _expandir(original, conteudo)
+            saida.extend(avisos)
+            for nome_pdf, dados in pdfs:
+                nome = _nome_seguro(nome_pdf)
+                if not dados.startswith(b"%PDF"):
+                    saida.append({"arquivo": nome, "status": "erro", "erro": "O arquivo tem extensão .pdf mas não é um PDF válido."})
                     continue
-                # Mesmo nome com conteudo diferente: acrescenta sufixo em vez de sobrescrever.
-                final = nome
-                n = 2
-                while final in nomes or (pasta_pdfs / final).exists():
-                    final = f"{Path(nome).stem}_{n}.pdf"
-                    n += 1
-                item, resultados, achados_pdf = analisar_exames.analisar_pdf(tmp_path, vistos, nome=final)
-                if item.tipo == "duplicado":
-                    saida.append({"arquivo": nome, "status": "duplicado", "igual_a": item.duplicado_de})
-                    tmp_path.unlink()
-                    continue
-                os.replace(tmp_path, pasta_pdfs / final)
-                os.chmod(pasta_pdfs / final, 0o600)
-                reg, res, ach = asdict(item), [asdict(r) for r in resultados], [asdict(a) for a in achados_pdf]
-                extra.setdefault("arquivos", []).append(reg)
-                extra.setdefault("resultados", []).extend(res)
-                extra.setdefault("achados", []).extend(ach)
-                shas[digest] = final
-                nomes.add(final)
-                mudou = True
-                saida.append(_resumo_envio(reg, res, ach))
-            except Exception as exc:  # layout inesperado nao derruba o envio dos demais
-                tmp_path.unlink(missing_ok=True)
-                saida.append({"arquivo": nome, "status": "erro", "erro": f"Não foi possível ler o PDF ({type(exc).__name__})."})
+                fd, tmp = tempfile.mkstemp(dir=pasta_pdfs, prefix=".envio-", suffix=".pdf")
+                os.write(fd, dados)
+                os.close(fd)
+                tmp_path = Path(tmp)
+                try:
+                    digest = analisar_exames.sha256(tmp_path)
+                    if digest in shas:
+                        saida.append({"arquivo": nome, "status": "duplicado", "igual_a": shas[digest]})
+                        tmp_path.unlink()
+                        continue
+                    # Mesmo nome com conteudo diferente: acrescenta sufixo em vez de sobrescrever.
+                    final = nome
+                    n = 2
+                    while final in nomes or (pasta_pdfs / final).exists():
+                        final = f"{Path(nome).stem}_{n}.pdf"
+                        n += 1
+                    item, resultados, achados_pdf = analisar_exames.analisar_pdf(tmp_path, vistos, nome=final)
+                    if item.tipo == "duplicado":
+                        saida.append({"arquivo": nome, "status": "duplicado", "igual_a": item.duplicado_de})
+                        tmp_path.unlink()
+                        continue
+                    os.replace(tmp_path, pasta_pdfs / final)
+                    os.chmod(pasta_pdfs / final, 0o600)
+                    reg, res, ach = asdict(item), [asdict(r) for r in resultados], [asdict(a) for a in achados_pdf]
+                    extra.setdefault("arquivos", []).append(reg)
+                    extra.setdefault("resultados", []).extend(res)
+                    extra.setdefault("achados", []).extend(ach)
+                    shas[digest] = final
+                    nomes.add(final)
+                    mudou = True
+                    saida.append(_resumo_envio(reg, res, ach))
+                except Exception as exc:  # layout inesperado nao derruba o envio dos demais
+                    tmp_path.unlink(missing_ok=True)
+                    saida.append({"arquivo": nome, "status": "erro", "erro": f"Não foi possível ler o PDF ({type(exc).__name__})."})
 
         if mudou:
             _gravar_json(_arquivo_upload(), extra)  # type: ignore[arg-type]

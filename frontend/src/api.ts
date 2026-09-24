@@ -82,7 +82,7 @@ export const avisarDadosMudaram = () => window.dispatchEvent(new Event(EVENTO_DA
 export interface EnvioSistema { id: string; nome: string; marcadores: string[] }
 export interface Envio {
   arquivo: string
-  status: 'adicionado' | 'duplicado' | 'erro'
+  status: 'adicionado' | 'duplicado' | 'erro' | 'info'
   tipo?: string
   data?: string | null
   resultados?: number

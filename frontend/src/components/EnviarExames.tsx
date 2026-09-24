@@ -28,9 +28,22 @@ export function EnviarExames() {
   }
 
   async function enviar(lista: FileList | File[]) {
-    const pdfs = Array.from(lista).filter((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))
+    const todos = Array.from(lista)
+    if (!todos.length) return
+    // Arquivos acima do limite nem sao enviados (a Cloudflare recusa uploads
+    // grandes, e um ZIP de imagens DICOM de centenas de MB so gastaria tempo).
+    const limite = (status.dados?.limite_mb ?? 25) * 1024 * 1024
+    const grandes: Envio[] = todos.filter((f) => f.size > limite).map((f) => ({
+      arquivo: f.name,
+      status: 'erro',
+      erro: /\.zip$/i.test(f.name) && f.size > 50 * 1024 * 1024
+        ? `ZIP de ${Math.round(f.size / 1024 / 1024)} MB — provavelmente imagens DICOM, que o painel não lê. Envie os laudos em PDF (ou um .zip só com os PDFs).`
+        : `Arquivo de ${Math.round(f.size / 1024 / 1024)} MB passa do limite de ${status.dados?.limite_mb ?? 25} MB.`,
+    }))
+    const pdfs = todos.filter((f) => f.size <= limite)
+    if (grandes.length) setEnvios((antes) => [...grandes, ...antes])
     if (!pdfs.length) {
-      setErro('Escolha arquivos PDF.')
+      setErro(null)
       return
     }
     setErro(null)
@@ -70,7 +83,7 @@ export function EnviarExames() {
   }
 
   return (
-    <Painel titulo="Enviar exames" acoes={<span className="text-xs text-muted">PDF de laudo, até {status.dados?.limite_mb ?? 25} MB cada</span>}>
+    <Painel titulo="Enviar exames" acoes={<span className="text-xs text-muted">PDF ou .zip com PDFs, até {status.dados?.limite_mb ?? 25} MB cada</span>}>
       <div
         onDragOver={(e) => { e.preventDefault(); setArrastando(true) }}
         onDragLeave={() => setArrastando(false)}
@@ -84,15 +97,15 @@ export function EnviarExames() {
           <p className="text-sm font-medium text-ink" role="status">Analisando {enviando.length === 1 ? enviando[0] : `${enviando.length} arquivos`}…</p>
         ) : (
           <>
-            <p className="text-sm font-medium text-ink">Arraste os PDFs aqui</p>
+            <p className="text-sm font-medium text-ink">Arraste os PDFs ou o .zip aqui</p>
             <button type="button" onClick={() => entrada.current?.click()}
               className="rounded-lg bg-teal px-4 py-1.5 text-sm font-medium text-white hover:bg-teal-deep">
               Escolher arquivos
             </button>
-            <p className="text-xs text-muted">Cada exame vai sozinho para a área certa (Fígado, Rins, Hormônios…). Laudos repetidos são ignorados.</p>
+            <p className="text-xs text-muted">Cada exame vai sozinho para a área certa (Fígado, Rins, Hormônios…). Pode mandar um .zip com vários laudos. Laudos repetidos são ignorados.</p>
           </>
         )}
-        <input ref={entrada} type="file" accept="application/pdf,.pdf" multiple className="hidden" onChange={(e) => e.target.files && enviar(e.target.files)} />
+        <input ref={entrada} type="file" multiple className="hidden" onChange={(e) => e.target.files && enviar(e.target.files)} />
       </div>
 
       {erro && <p className="mt-3 text-sm text-alto" role="alert">{erro}</p>}
@@ -108,6 +121,7 @@ export function EnviarExames() {
                     {e.status === 'adicionado' && <>{TIPOS[e.tipo ?? ''] ?? e.tipo} · {fmtData(e.data ?? null)} · {e.resultados} {e.resultados === 1 ? 'valor' : 'valores'}{e.fora ? `, ${e.fora} fora da referência` : ''}</>}
                     {e.status === 'duplicado' && <>Já estava no painel{e.igual_a ? ` (igual a ${e.igual_a})` : ''} — nada foi alterado.</>}
                     {e.status === 'erro' && <span className="text-alto">{e.erro}</span>}
+                    {e.status === 'info' && <span>{e.erro}</span>}
                   </div>
                   {e.aviso && <div className="mt-0.5 text-xs text-alto">{e.aviso}</div>}
                 </div>
