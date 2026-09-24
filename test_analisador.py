@@ -908,7 +908,7 @@ class PesquisaLeucocitosTests(unittest.TestCase):
     def test_primeiro_jato_nao_conflita_com_sedimento(self):
         r = A.extract_results(Path("p.pdf"), self.TEXTO, None)[0]
         self.assertEqual((r.exame_id, r.valor_numerico, r.ref_max), ("urina_pesquisa_leucocitos", 2100.0, 10000.0))
-        rs, conf = A.consolidar([A.asdict(r)] + [A.asdict(x) for x in A.extract_results(Path("u.pdf"), UrinaLayoutRealTests.PARCIAL, None)])
+        _, conf = A.consolidar([A.asdict(r)] + [A.asdict(x) for x in A.extract_results(Path("u.pdf"), UrinaLayoutRealTests.PARCIAL, None)])
         self.assertEqual(conf, [])
 
     def test_unidade_equivalente(self):
