@@ -76,6 +76,23 @@ def _mesclar(principal: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]
     return saida
 
 
+def _sem_envios_desfeitos(dados: dict[str, Any]) -> dict[str, Any]:
+    """O analisador principal tambem le os PDFs enviados pelo painel (--enviados).
+    Se um envio foi desfeito depois disso, o PDF sumiu da pasta: esconde o que
+    veio dele ate a proxima execucao, em vez de mostrar um exame removido."""
+    if UPLOAD_DIR is None:
+        return dados
+    pasta = UPLOAD_DIR / "pdfs"
+    fora = {a["arquivo"] for a in dados.get("arquivos", []) if a.get("origem") == "envio" and not (pasta / a["arquivo"]).exists()}
+    if not fora:
+        return dados
+    saida = dict(dados)
+    saida["arquivos"] = [a for a in dados.get("arquivos", []) if a["arquivo"] not in fora]
+    for chave in ("resultados", "achados"):
+        saida[chave] = [x for x in dados.get(chave, []) if x.get("arquivo") not in fora]
+    return saida
+
+
 def carregar() -> dict[str, Any]:
     caminho = RESULT_DIR / "resultados.json"
     extra = _arquivo_upload()
@@ -87,6 +104,7 @@ def carregar() -> dict[str, Any]:
         if _cache["mtime"] != mtime:
             bruto = json.loads(caminho.read_text(encoding="utf-8")) if caminho.exists() else {"arquivos": [], "resultados": [], "achados": [], "erros": []}
             bruto = _mesclar(bruto, _ler_upload())
+            bruto = _sem_envios_desfeitos(bruto)
             # Recalcula id (urina x sangue), unidade, classificacao, duplicatas e
             # conflitos: uma mudanca no mapa_exames.py vale sem rodar o analisador
             # de novo, e os envios pelo painel passam pelas mesmas regras.
@@ -192,7 +210,7 @@ def documentos() -> list[dict[str, Any]]:
                 "sistemas": sorted({r["sistema"] for r in rs if r["sistema"] != "outros"}),
                 "regioes": sorted(achados_por_arquivo.get(a["arquivo"], set())),
                 "aviso": a.get("aviso", ""),
-                "origem": a.get("origem", "analisador"),
+                "origem": "upload" if a.get("origem") in ("upload", "envio") else "analisador",
                 "pdf": _achar_pdf(a["arquivo"]) is not None,
                 "status": "achados" if achados_por_arquivo.get(a["arquivo"]) else _status_documento(len(rs), len(fora), a.get("tipo", "")),
             }
