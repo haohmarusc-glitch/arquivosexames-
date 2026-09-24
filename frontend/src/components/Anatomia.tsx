@@ -17,6 +17,8 @@ const escalaCamadas = (topo: number, base: number, topoAlvo: number, baseAlvo: n
   return `translate(${(160 * (1 - s)).toFixed(2)} ${(topoAlvo - topo * s).toFixed(2)}) scale(${s.toFixed(4)})`
 }
 const AJUSTE_CAMADAS_FRENTE = escalaCamadas(13.2, 591.2, 80, 572.7)
+// Vista de costas em camadas: orgaos que ficam atras dos pulmoes (desenhados antes deles).
+const ATRAS_DOS_PULMOES = ['coracao']
 const AJUSTE_CAMADAS_COSTAS = escalaCamadas(13.1, 630.4, 80, 567.2)
 const ALERTA = '#b8661f'
 const SELECAO = '#1d5b5a'
@@ -130,7 +132,7 @@ function Organ({ o, base, ativo, alerta, esmaecido, onSelecionar }: { o: OrgaoIm
 /** Como Organ, mas para orgaos de costas "em camadas": o PNG ja ocupa o
  * canvas inteiro (o orgao vem posicionado no lugar certo dentro dele), entao
  * a imagem e desenhada em tela cheia — so a elipse de clique usa a caixa. */
-function OrganCostasCamadas({ o, ativo, alerta, esmaecido, onSelecionar }: { o: OrgaoCostasCamadas; ativo: boolean; alerta: boolean; esmaecido: boolean; onSelecionar: (s: string) => void }) {
+function OrganCostasCamadas({ o, ativo, alerta, esmaecido, onSelecionar, semImagem = false }: { o: OrgaoCostasCamadas; ativo: boolean; alerta: boolean; esmaecido: boolean; onSelecionar: (s: string) => void; semImagem?: boolean }) {
   const cx = o.caixa.x + o.caixa.w / 2
   const cy = o.caixa.y + o.caixa.h / 2
   const imgClasse = o.id === 'coracao' ? 'ms-coracao' : undefined
@@ -138,7 +140,7 @@ function OrganCostasCamadas({ o, ativo, alerta, esmaecido, onSelecionar }: { o: 
   if (alerta && !ativo) elipseClasse.push('ms-alerta-contorno')
   return (
     <g opacity={esmaecido ? 0.45 : 1} className="transition-opacity">
-      <image href={`/anatomia/${o.arquivo}`} x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: 'none' }} className={imgClasse} />
+      {!semImagem && <image href={`/anatomia/${o.arquivo}`} x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: 'none' }} className={imgClasse} />}
       <ellipse
         cx={cx} cy={cy} rx={o.caixa.w / 2} ry={o.caixa.h / 2}
         fill="transparent"
@@ -216,6 +218,13 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
         />
         <image href="/anatomia/costas/sistema-arterial-costas.webp" x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" opacity={0.55} clipPath="url(#clipCorpoCostas)" />
         <image href="/anatomia/costas/sistema-venoso-costas.webp" x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" opacity={0.6} clipPath="url(#clipCorpoCostas)" />
+        {/* De costas o coracao fica ATRAS dos pulmoes: a imagem vem antes deles
+            (os pulmoes a cobrem); a area de clique continua por cima, abaixo. */}
+        {ORGAOS_COSTAS_CAMADAS.filter((o) => ATRAS_DOS_PULMOES.includes(o.id)).map((o) => (
+          <g key={o.id} opacity={esmaecer(o) ? 0.45 : 1} className="transition-opacity">
+            <image href={`/anatomia/${o.arquivo}`} x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: 'none' }} className={o.id === 'coracao' ? 'ms-coracao' : undefined} />
+          </g>
+        ))}
         {DECORATIVOS_COSTAS_CAMADAS.map((d) => (
           <image
             key={d.id} href={`/anatomia/${d.arquivo}`} x={40} y={8} width={240} height={640}
@@ -226,6 +235,7 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
         {ORGAOS_COSTAS_CAMADAS.map((o) => (
           <OrganCostasCamadas
             key={o.id}
+            semImagem={ATRAS_DOS_PULMOES.includes(o.id)}
             o={o}
             ativo={destaca(o)}
             alerta={comAlerta.has(o.sistema)}
