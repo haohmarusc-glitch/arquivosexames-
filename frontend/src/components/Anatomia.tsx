@@ -6,6 +6,18 @@ import {
 } from './formasCorpo'
 
 const VIEWBOX = '40 8 240 640'
+// As imagens "em camadas" (esqueleto, musculatura, vasos...) ocupam quase a
+// altura toda; a imagem unica nova mostra o corpo inteiro (com as maos) menor.
+// Para as duas vistas terem o mesmo tamanho, o grupo das camadas e reduzido
+// alinhando topo da cabeca e planta dos pes (medidos no alfa das imagens):
+// frente: camadas 13.2..591.2 -> imagem unica 80..572.7; costas: 13.1..630.4 -> 80..567.2.
+// Tudo dentro do grupo (imagens, contorno CORPO, areas de clique) segue junto.
+const escalaCamadas = (topo: number, base: number, topoAlvo: number, baseAlvo: number) => {
+  const s = (baseAlvo - topoAlvo) / (base - topo)
+  return `translate(${(160 * (1 - s)).toFixed(2)} ${(topoAlvo - topo * s).toFixed(2)}) scale(${s.toFixed(4)})`
+}
+const AJUSTE_CAMADAS_FRENTE = escalaCamadas(13.2, 591.2, 80, 572.7)
+const AJUSTE_CAMADAS_COSTAS = escalaCamadas(13.1, 630.4, 80, 567.2)
 const ALERTA = '#b8661f'
 const SELECAO = '#1d5b5a'
 
@@ -192,6 +204,7 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
     return (
       <svg viewBox={VIEWBOX} className="h-full w-full" role="group" aria-label="Figura do corpo visto de costas (em camadas), com órgãos selecionáveis">
         <DefsEAnimacoes />
+        <g transform={AJUSTE_CAMADAS_COSTAS}>
         <defs><clipPath id="clipCorpoCostas"><path d={CORPO} /></clipPath></defs>
         <image href="/anatomia/costas/esqueleto-costas.webp" x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" />
         <image
@@ -220,6 +233,7 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
             onSelecionar={onSelecionar}
           />
         ))}
+        </g>
       </svg>
     )
   }
@@ -228,6 +242,7 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
     return (
       <svg viewBox={VIEWBOX} className="h-full w-full" role="group" aria-label="Figura do corpo visto de frente (em camadas), com órgãos selecionáveis">
         <DefsEAnimacoes />
+        <g transform={AJUSTE_CAMADAS_FRENTE}>
         <image href="/anatomia/esqueleto-frontal.webp" x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" />
         <image
           href="/anatomia/musculatura-frontal.webp"
@@ -264,6 +279,7 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
             onSelecionar={onSelecionar}
           />
         ))}
+        </g>
       </svg>
     )
   }
