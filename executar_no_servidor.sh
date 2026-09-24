@@ -36,7 +36,7 @@ fi
 # copia no rclone fica como backup.
 ENVIADOS=()
 if compgen -G "$UPLOADS_PDF_DIR/*.pdf" > /dev/null; then
-  rclone copy "$UPLOADS_PDF_DIR" "$REMOTE_ENVIADOS" --include "*.pdf" --exclude ".*"
+  rclone copy "$UPLOADS_PDF_DIR" "$REMOTE_ENVIADOS" --filter "- .*" --filter "+ *.pdf" --filter "- *"
   ENVIADOS=(--enviados "$UPLOADS_PDF_DIR")
   echo "Envios pelo painel copiados para $REMOTE_ENVIADOS"
 fi
