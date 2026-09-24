@@ -962,3 +962,58 @@ class EspermogramaTests(unittest.TestCase):
         hem = [r for r in rs if r["exame_id"] == "hemacias"]
         self.assertEqual([r["unidade_fonte"] for r in hem], ["referencia", "laudo"])
         self.assertEqual({r["exame_id"] for r in rs} - {"hemacias"}, {"esperma_hemacias"})
+
+
+class VerificarGraficosTests(unittest.TestCase):
+    """verificar_graficos.py sobre a saida real da API (mesmas regras do painel)."""
+
+    @staticmethod
+    def _serie(mid, pontos):
+        ult = pontos[-1]
+        return {mid: {"resumo": {"id": mid, "nome": mid, "medicoes": len(pontos), "ultima_data": ult["data"], "ultimo_valor": ult["valor"]},
+                      "detalhe": {"pontos": pontos}}}
+
+    @staticmethod
+    def _p(data, valor, lo=None, hi=None, unidade="/mm3"):
+        return {"data": data, "valor": valor, "valor_texto": str(valor), "unidade": unidade, "ref_min": lo, "ref_max": hi,
+                "classificacao": A.classificar(valor, lo, hi), "arquivo": "x.pdf"}
+
+    def test_zero_dentro_da_referencia_nao_e_discrepante(self):
+        import verificar_graficos as V
+        pts = [self._p(f"2025-0{i}-01", v, 0, 460) for i, v in enumerate((400, 410, 405, 390, 0), start=1)]
+        erros, _ = V.verificar(self._serie("eosinofilos", pts))
+        self.assertEqual(erros, [])
+
+    def test_discrepante_sem_referencia_continua_pego(self):
+        import verificar_graficos as V
+        pts = [self._p(f"2025-0{i}-01", v, unidade="milhões/mm3") for i, v in enumerate((5.0, 5.1, 5.2, 4.9), start=1)]
+        pts.append(self._p("2025-06-01", 100000.0, unidade="milhões/mm3"))
+        erros, _ = V.verificar(self._serie("hemacias", pts))
+        self.assertTrue(any("discrepante" in e for e in erros))
+
+    def test_api_passa_no_verificador(self):
+        import importlib
+        import json as _json
+        import os
+        import tempfile as _tf
+        import verificar_graficos as V
+        with _tf.TemporaryDirectory() as res:
+            resultados = []
+            for arq, texto in (("h.pdf", PainelTests.TEXTO), ("u.pdf", UrinaLayoutRealTests.PARCIAL),
+                               ("g.pdf", UrinaLayoutRealTests.GRAM), ("c.pdf", CoagulogramaTests.TEXTO),
+                               ("p.pdf", PesquisaLeucocitosTests.TEXTO), ("e.pdf", EspermogramaTests.TEXTO),
+                               ("s.pdf", IndiceTests.TEXTO)):
+                resultados += [A.asdict(r) for r in A.extract_results(Path(arq), texto, "2025-01-01")]
+            (Path(res) / "resultados.json").write_text(_json.dumps({"arquivos": [], "achados": [], "resultados": resultados}), encoding="utf-8")
+            os.environ["ANALISADOR_RESULT_DIR"] = res
+            import api
+            api = importlib.reload(api)
+            try:
+                dados = {m["id"]: {"resumo": m, "detalhe": api.serie(m["id"])} for m in api.marcadores()}
+                erros, _ = V.verificar(dados)
+                self.assertEqual(erros, [])
+                self.assertIn("ttpa_paciente", dados)
+                self.assertNotIn("sem_titulo", dados)
+            finally:
+                os.environ.pop("ANALISADOR_RESULT_DIR", None)
+                importlib.reload(api)

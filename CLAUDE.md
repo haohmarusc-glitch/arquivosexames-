@@ -111,6 +111,11 @@ Roda no analisador E na API (sobre o JSON + envios), e idempotente:
 - Unidade: `unidade_valida()` rejeita texto do laudo; senao a da referencia; por
   ultimo `UNIDADE_PADRAO` (`unidade_fonte="padrao"`, so exibicao).
 
+- `verificar_graficos.py` confere a API como o grafico a ve (datas repetidas,
+  unidades misturadas, nome generico, classificacao x limites, discrepantes).
+  Rodar depois de recriar o container:
+  `docker cp verificar_graficos.py saude-app:/tmp/ && docker exec saude-app python3 /tmp/verificar_graficos.py --base http://localhost:8502`
+
 ## Testar antes de aplicar
 ```bash
 .venv/bin/python -m unittest
