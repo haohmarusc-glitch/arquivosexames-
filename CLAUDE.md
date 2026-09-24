@@ -51,9 +51,10 @@ Code separado com uma ferramenta de imagem que esta sessao de chat nao tem.
   ESQUERDA da tela; na vista de COSTAS essa relacao se INVERTE (rim direito
   fica a direita da tela). As duas vistas tem `caixa` calibradas
   separadamente — nao reusar coordenadas de uma vista na outra.
-- A vista de Costas so tem os RINS como area clicavel nesta primeira versao
-  (fundo = `costas/orgaos-costas.webp`). Figado/baco/etc aparecem na imagem
-  mas sem hotspot dedicado ainda.
+- Vista de Costas (fundo = `costas/orgaos-costas.webp`): figado, baco, rins,
+  suprarrenais, bexiga e prostata clicaveis, caixas medidas numa grade do
+  viewBox (formula em `formasCorpo.ts`). Coracao, pancreas, tireoide e
+  testiculos nao aparecem nessa imagem.
 - Quando ha achado de imagem com regiao `renal` (calculo renal), o painel
   mostra `costas/rins-corte-calculos.webp` com aviso de que e esquematico
   (nao reproduz posicao/quantidade reais).
@@ -63,9 +64,8 @@ Code separado com uma ferramenta de imagem que esta sessao de chat nao tem.
   continua sendo a figura interativa principal; NAO foi substituido pela
   imagem `esqueleto-costas.png` (fica para depois, precisa recalibrar todas
   as vertebras/articulacoes contra a imagem nova).
-- Pendente (deliberadamente adiado, nao é bug): hotspots para
-  figado/baco/vesicula/prostata/regiao escrotal/parede abdominal na vista de
-  costas; troca do esqueleto da Coluna pela imagem nova; vistas alternativas
+- Pendente (deliberadamente adiado, nao é bug): vesicula/regiao escrotal/
+  parede abdominal na vista de costas (nao visiveis na imagem); troca do esqueleto da Coluna pela imagem nova; vistas alternativas
   por sistema (venoso, arterial, muscular, nervoso, linfatico — existem
   arquivos prontos em `imagens-anatomia/camadas/` e `costas/` fora do repo,
   nao processados ainda).
@@ -79,7 +79,7 @@ Code separado com uma ferramenta de imagem que esta sessao de chat nao tem.
 - Camadas: bexiga subiu para trás da sínfise púbica, intestinos encurtados,
   rim direito mais baixo, coração deslocado para a esquerda da pessoa,
   `AORTA_CAMADAS` refeita sobre `esqueleto-frontal.webp`.
-- Vista de costas continua só com rins (pendente).
+- Vista de costas com figado, baco, rins, suprarrenais, bexiga e prostata.
 
 ## Cuidados importantes (ja corrigidos, nao regredir)
 - **Privacidade**: nome, CPF e data de nascimento do paciente NUNCA podem

@@ -155,11 +155,11 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
 
   if (orientacao === 'costas' && estiloCostas === 'composta') {
     return (
-      <svg viewBox={VIEWBOX} className="h-full w-full" role="group" aria-label="Figura do corpo visto de costas, com rins selecionáveis">
+      <svg viewBox={VIEWBOX} className="h-full w-full" role="group" aria-label="Figura do corpo visto de costas, com órgãos selecionáveis">
         <DefsEAnimacoes />
         <image href="/anatomia/costas/orgaos-costas.webp" x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" />
         {ORGAOS_COSTAS.map((o) => {
-          const ativo = selecionado === o.sistema
+          const ativo = destaca(o)
           const alerta = comAlerta.has(o.sistema)
           return (
             <ellipse
