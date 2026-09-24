@@ -3,6 +3,7 @@ import shutil
 import unittest
 from unittest import mock
 
+from collections import defaultdict
 from pathlib import Path
 
 import analisar_exames as A
@@ -914,3 +915,24 @@ class PesquisaLeucocitosTests(unittest.TestCase):
     def test_unidade_equivalente(self):
         self.assertEqual(A.chave_unidade("p/mL"), A.chave_unidade("/mL"))
         self.assertEqual(A.chave_unidade("milhões/mm³"), A.chave_unidade("milhoes/mm3"))
+
+
+class GrafiaUnidadeTests(unittest.TestCase):
+    def test_serie_usa_uma_grafia_so(self):
+        rs, _ = A.consolidar([
+            _r(arquivo="a.pdf", data="2025-01-01", exame="TSH", valor_numerico=1.0, unidade="µIU/mL"),
+            _r(arquivo="b.pdf", data="2025-02-01", exame="TSH", valor_numerico=1.1, unidade="µIU/mL"),
+            _r(arquivo="c.pdf", data="2025-03-01", exame="TSH", valor_numerico=0.9, unidade="uIU/mL"),
+            _r(arquivo="d.pdf", data="2025-01-01", exame="HDL", valor_numerico=40.0, unidade="mg/dL"),
+            _r(arquivo="e.pdf", data="2025-02-01", exame="HDL", valor_numerico=35.0, unidade="mg/dl"),
+        ])
+        por_id = defaultdict(set)
+        for r in rs:
+            por_id[r["exame_id"]].add(r["unidade"])
+        self.assertEqual(por_id["tsh"], {"µIU/mL"})
+        self.assertEqual(len(por_id["hdl"]), 1)
+
+    def test_resultado_textual_nao_vira_titulo(self):
+        linhas = ["ANTICORPO ANTI-HEPATITE C", "Material: Soro", "NÃO REAGENTE", "Indice:"]
+        self.assertEqual(A.titulo_acima(linhas, 3), "ANTICORPO ANTI-HEPATITE C")
+        self.assertEqual(identificar("ANTICORPO ANTI-HEPATITE C - Indice")[0], "anti_hcv_indice")

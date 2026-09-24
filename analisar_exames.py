@@ -475,6 +475,11 @@ def block_material(lines: list[str]) -> str:
     return " / ".join(p for p in partes if p)
 
 
+RESULTADO_TEXTO_RE = re.compile(
+    r"^(?:nao\s+)?(?:reagente|reativo|detectado|detectavel)s?$|^(?:negativo|positivo|ausentes?|presentes?|indeterminado|inconclusivo)$"
+)
+
+
 def titulo_acima(lines: list[str], index: int) -> str | None:
     """Titulo real do exame nas linhas acima de um rotulo generico ("Indice")."""
     for i in range(index - 1, -1, -1):
@@ -484,6 +489,8 @@ def titulo_acima(lines: list[str], index: int) -> str | None:
         baixo = normalize(candidato)
         if baixo.startswith(IGNORED_LABELS) or NUM_LINE_RE.match(candidato) or REF_LINE_RE.search(baixo):
             continue
+        if RESULTADO_TEXTO_RE.match(baixo):
+            continue  # "NAO REAGENTE" e o resultado, nao o titulo do exame
         letras = [c for c in candidato if c.isalpha()]
         if len(letras) >= 3 and sum(c.isupper() for c in letras) / len(letras) >= 0.72:
             return candidato
@@ -772,6 +779,16 @@ def consolidar(resultados: list[dict]) -> tuple[list[dict], list[dict]]:
                          "coleta_hora": r.get("coleta_hora", ""),
                          "arquivos": r["arquivos"], "no_grafico": r is escolhido} for r in rs],
         })
+
+    # mesma unidade com grafias diferentes (mg/dl x mg/dL, uIU x µIU): a serie usa a mais comum
+    grafias: dict[tuple[str, str], Counter] = defaultdict(Counter)
+    for r in finais:
+        if r["unidade"]:
+            grafias[(r["exame_id"], chave_unidade(r["unidade"]))][r["unidade"]] += 1
+    for r in finais:
+        if r["unidade"]:
+            contagem = grafias[(r["exame_id"], chave_unidade(r["unidade"]))]
+            r["unidade"] = max(contagem, key=lambda u: (contagem[u], u != u.lower(), "µ" in u, u))
 
     for r in finais:
         if not r["unidade"] and r["exame_id"] in UNIDADE_PADRAO:

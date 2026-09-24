@@ -111,7 +111,7 @@ MARCADORES: list[tuple[str, str, str, tuple[str, ...]]] = [
     ("tp_atividade", "Atividade de protrombina", "figado", (r"atividade\s+(?:de\s+)?protrombina",)),
     ("anti_hbs", "Anti-HBs (imunidade hepatite B)", "figado", (r"anti[\s-]*hbs",)),
     ("hbsag", "HBsAg (hepatite B)", "figado", (r"\bhbsag\b",)),
-    ("anti_hcv", "Anti-HCV (hepatite C)", "figado", (r"anti[\s-]*hcv",)),
+    ("anti_hcv", "Anti-HCV (hepatite C)", "figado", (r"anti[\s-]*hcv", r"anti[\s-]*hepatite\s*c\b")),
     # Espermograma
     ("esperma_total", "Espermatozoides no ejaculado", "testiculos", (r"espermatozoides\s+no\s+ejaculado",)),
     ("esperma_concentracao", "Espermatozoides por mL", "testiculos", (r"espermatozoides\s*/?\s*ml",)),
