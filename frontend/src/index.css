@@ -1,0 +1,31 @@
+@import "tailwindcss";
+@import "@fontsource-variable/figtree";
+
+@theme {
+  --font-sans: "Figtree Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --color-ink: #17313a;
+  --color-muted: #5b7178;
+  --color-line: #dce5e6;
+  --color-canvas: #f2f5f5;
+  --color-teal: #2b7a78;
+  --color-teal-deep: #1d5b5a;
+  --color-teal-soft: #ddefed;
+
+  --color-alto: #b8661f;
+  --color-alto-soft: #fbead9;
+  --color-baixo: #4a5fbf;
+  --color-baixo-soft: #e5e9fa;
+  --color-ok: #2a7f57;
+  --color-ok-soft: #dff2e6;
+  --color-band: #e3f2e8;
+}
+
+html { background: var(--color-canvas); color: var(--color-ink); }
+body { font-feature-settings: "tnum" 1; -webkit-font-smoothing: antialiased; }
+
+:focus-visible { outline: 2px solid var(--color-teal); outline-offset: 2px; border-radius: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}

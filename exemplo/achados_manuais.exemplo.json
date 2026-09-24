@@ -1,0 +1,11 @@
+[
+  {
+    "titulo": "Artroscopia (exemplo fictício)",
+    "regiao": "joelho",
+    "lado": "esquerdo",
+    "data": "2021-08-15",
+    "tipo": "cirurgia",
+    "descricao": "Texto livre: procedimento, hospital, médico responsável.",
+    "fonte": "Relatório cirúrgico (papel)"
+  }
+]

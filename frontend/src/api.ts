@@ -1,0 +1,155 @@
+import { useCallback, useEffect, useState } from 'react'
+
+export type Classificacao = 'acima' | 'abaixo' | 'dentro' | 'nao determinado'
+export type StatusDoc = 'atencao' | 'normal' | 'sem_valores' | 'achados'
+
+export interface Resumo {
+  titular: string
+  total_documentos: number
+  total_resultados: number
+  total_marcadores: number
+  sem_texto: number
+  erros: number
+  duplicados: number
+  nome_divergente: number
+  periodo: { inicio: string | null; fim: string | null }
+  ultimo_exame: { data: string | null; marcadores: number; arquivos: string[] }
+  atencao: { id: string; nome: string; valor: number; unidade: string; classificacao: Classificacao; data: string }[]
+}
+
+export interface Documento {
+  arquivo: string
+  data: string | null
+  tipo: string
+  paginas: number
+  texto_extraido: boolean
+  resultados: number
+  fora: number
+  sistemas: string[]
+  regioes: string[]
+  aviso: string
+  status: StatusDoc
+}
+
+export interface Marcador {
+  id: string
+  nome: string
+  sistema: string
+  unidade: string
+  medicoes: number
+  ultimo_valor: number
+  ultima_data: string | null
+  classificacao: Classificacao
+}
+
+export interface Ponto {
+  data: string
+  valor: number
+  valor_texto: string
+  unidade: string
+  ref_min: number | null
+  ref_max: number | null
+  referencia: string
+  classificacao: Classificacao
+  arquivo: string
+}
+
+export interface Serie {
+  id: string
+  nome: string
+  sistema: string
+  pontos: Ponto[]
+}
+
+export interface Sistema {
+  id: string
+  nome: string
+  marcadores: number
+  fora: number
+}
+
+export interface Estado<T> {
+  dados: T | null
+  erro: string | null
+  carregando: boolean
+  recarregar: () => void
+}
+
+export function useApi<T>(caminho: string | null): Estado<T> {
+  const [dados, setDados] = useState<T | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+  const [carregando, setCarregando] = useState(Boolean(caminho))
+  const [versao, setVersao] = useState(0)
+
+  useEffect(() => {
+    if (!caminho) return
+    const ctrl = new AbortController()
+    setCarregando(true)
+    setErro(null)
+    fetch(caminho, { signal: ctrl.signal })
+      .then(async (r) => {
+        const corpo = await r.json().catch(() => null)
+        if (!r.ok) throw new Error(corpo?.detail ?? `A API respondeu ${r.status}.`)
+        return corpo as T
+      })
+      .then(setDados)
+      .catch((e: Error) => {
+        if (e.name !== 'AbortError') setErro(e.message || 'Não foi possível falar com a API.')
+      })
+      .finally(() => setCarregando(false))
+    return () => ctrl.abort()
+  }, [caminho, versao])
+
+  const recarregar = useCallback(() => setVersao((v) => v + 1), [])
+  return { dados, erro, carregando, recarregar }
+}
+
+export interface Achado {
+  arquivo: string
+  data: string | null
+  modalidade: string
+  regiao: string
+  niveis: string[]
+  niveis_historicos: string[]
+  termos: string[]
+  lado: string
+  titulo: string
+  trecho: string
+  origem: 'laudo' | 'manual'
+}
+
+export const REGIOES: Record<string, string> = {
+  cervical: 'Coluna cervical',
+  toracica: 'Coluna torácica',
+  lombar: 'Coluna lombar',
+  sacral: 'Sacro',
+  ombro: 'Ombro',
+  cotovelo: 'Cotovelo',
+  punho_mao: 'Punho e mão',
+  quadril: 'Quadril',
+  joelho: 'Joelho',
+  tornozelo_pe: 'Tornozelo e pé',
+  outros: 'Outras regiões',
+}
+
+export const TERMOS: Record<string, string> = {
+  hernia: 'Hérnia',
+  protrusao: 'Protrusão/abaulamento',
+  artrodese: 'Artrodese/fixação',
+  estenose: 'Estenose/compressão',
+  degenerativo: 'Degenerativo',
+  listese: 'Listese',
+  radicular: 'Contato radicular',
+  fratura: 'Fratura',
+  lesao: 'Lesão/tendinopatia',
+  inflamatorio: 'Sinais inflamatórios',
+}
+
+export const MODALIDADES: Record<string, string> = {
+  ressonancia: 'Ressonância',
+  tomografia: 'Tomografia',
+  radiografia: 'Radiografia',
+  ultrassom: 'Ultrassom',
+  cirurgia: 'Cirurgia',
+  imagem: 'Exame de imagem',
+}

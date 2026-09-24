@@ -2,6 +2,10 @@
 set -Eeuo pipefail
 umask 077
 
+# Configuracao local (fora do Git), ex.: ANALISADOR_SEXO=M
+ENV_FILE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/.env"
+if [[ -f "$ENV_FILE" ]]; then set -a; source "$ENV_FILE"; set +a; fi
+
 BASE_DIR="${ANALISADOR_BASE_DIR:-/srv/saude/processamento}"
 REMOTE_SOURCE="${ANALISADOR_REMOTE_SOURCE:-saude-crypt:exames/Exames_Unimed_2023-2026.zip}"
 REMOTE_OUTPUT="${ANALISADOR_REMOTE_OUTPUT:-saude-crypt:historico/ultima-analise}"

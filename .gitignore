@@ -19,3 +19,12 @@ exames/
 laudos/
 imagens/
 entrada/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Dados gerados e registros pessoais (nunca no Git)
+exemplo/demo/
+achados_manuais.json
+resultados.json

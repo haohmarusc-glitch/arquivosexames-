@@ -100,6 +100,95 @@ systemctl daemon-reload
 systemctl enable --now analisador-exames.service
 ```
 
+## Painel novo (React + API)
+
+Substitui o painel Streamlit. A API (`api.py`, FastAPI) le o `resultados.json` e serve o frontend compilado.
+
+### No servidor
+
+```bash
+cd /opt/analisador-exames
+.venv/bin/pip install -r requirements.txt
+cd frontend && npm ci && npm run build && cd ..
+install -m 644 painel-exames.service /etc/systemd/system/painel-exames.service
+systemctl daemon-reload
+systemctl enable --now painel-exames.service
+```
+
+No computador: `ssh -L 8502:127.0.0.1:8502 root@SEU_IP` e acesse `http://localhost:8502`.
+
+Depois de atualizar os PDFs, rode `executar_no_servidor.sh` de novo; a API recarrega o JSON sozinha.
+
+### Desenvolvimento com dados ficticios
+
+```bash
+python exemplo/gerar_demo.py
+ANALISADOR_RESULT_DIR=exemplo/demo uvicorn api:app --port 8502   # terminal 1
+cd frontend && npm install && npm run dev                          # terminal 2
+```
+
+### Telas
+
+- **Visao geral**: ultima coleta, marcadores fora da referencia, achados de imagem, grafico de evolucao e documentos recentes.
+- **Evolucao**: todos os marcadores agrupados por sistema, grafico com a faixa de referencia e tabela de medicoes.
+- **Anatomia**: figura com orgaos ligados aos exames de sangue, e vista de coluna e articulacoes com os achados dos laudos de imagem marcados por nivel (C5-C6, L4-L5...).
+- **Documentos**: catalogo filtravel.
+
+### Achados de imagem
+
+O analisador copia a conclusao ("Impressao diagnostica", "Conclusao") dos laudos de RM, TC, RX e USG, e detecta regiao, niveis vertebrais, lado e termos (hernia, protrusao, artrodese, estenose...). Negacoes como "sem compressao" sao ignoradas. O painel mostra o texto original com o arquivo de origem.
+
+### Configuracao local (.env)
+
+Algumas tabelas de referencia mudam por sexo e idade (testosterona, LH, estradiol...). A idade e lida do laudo; o sexo vem de `/opt/analisador-exames/.env` (fora do Git):
+
+```bash
+echo "ANALISADOR_SEXO=M" > /opt/analisador-exames/.env
+chmod 600 /opt/analisador-exames/.env
+```
+
+Sem essa configuracao, esses exames aparecem como "sem referencia" em vez de usar a faixa errada.
+
+### Registros manuais
+
+Para diagnosticos ou cirurgias que nao estao em laudo de imagem, crie `achados_manuais.json` **na pasta de resultados do servidor** (`/srv/saude/painel`), nunca no repositorio. Modelo em `exemplo/achados_manuais.exemplo.json`. Campos:
+
+| Campo | Exemplo |
+|---|---|
+| `titulo` | "Artroscopia" |
+| `regiao` | cervical, toracica, lombar, sacral, ombro, cotovelo, punho_mao, quadril, joelho, tornozelo_pe |
+| `niveis` | ["L4-L5"] (so coluna) |
+| `lado` | direito, esquerdo, bilateral |
+| `data` | "2021-08-15" |
+| `tipo` | "cirurgia" |
+| `descricao` | texto livre |
+| `fonte` | "Relatorio cirurgico" |
+
+### Normalizacao de exames
+
+`mapa_exames.py` agrupa grafias diferentes ("COLESTEROL LDL", "LDL-COLESTEROL") e liga cada exame a um sistema do corpo. Se um exame aparecer em "Outros", acrescente os padroes dele la.
+
 ## Limites
 
+Numeros: virgula e decimal; ponto com grupos de 3 digitos ("6.500") e milhar; demais pontos ("5.0") sao decimais.
+
 PDFs digitalizados como imagem podem exigir OCR. Intervalos de referencia variam por laboratorio, idade, sexo e contexto. Confirme qualquer achado no documento original e com o profissional assistente.
+
+### Publicar em saude.premercadosc.com (Docker + Caddy)
+
+O painel roda como container na mesma rede Docker (`premercado_default`) do Caddy que ja serve premercadosc.com, sem publicar porta nenhuma no host — o container so e alcancavel de dentro dessa rede.
+
+```bash
+cd /opt/analisador-exames
+docker build -t saude-exames:latest .
+docker run -d --name saude-app --restart unless-stopped \
+  --network premercado_default \
+  -e ANALISADOR_RESULT_DIR=/data \
+  -e ANALISADOR_NOME=Jefferson \
+  -v /srv/saude/painel:/data:ro \
+  saude-exames:latest
+```
+
+Depois que `./executar_no_servidor.sh` atualiza `/srv/saude/painel/resultados.json`, o container ve a mudanca sozinho (volume montado, sem precisar reiniciar).
+
+No `/opt/premercado/Caddyfile`, acrescente um bloco `saude.{$DOMINIO}` com `basic_auth` (gere o hash com `docker run --rm -it caddy:2-alpine caddy hash-password`, nunca com `--plaintext` direto no comando) e `reverse_proxy saude-app:8502`, valide com `docker exec premercado-caddy-1 caddy validate --config /etc/caddy/Caddyfile` antes de `caddy reload`. Crie o registro DNS `saude` no Cloudflare com as mesmas opcoes do registro `kuma` existente.

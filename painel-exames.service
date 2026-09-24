@@ -1,0 +1,20 @@
+[Unit]
+Description=Painel privado de exames (React + API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/analisador-exames
+Environment=ANALISADOR_RESULT_DIR=/srv/saude/painel
+Environment=ANALISADOR_NOME=Jefferson
+ExecStart=/opt/analisador-exames/iniciar_painel.sh
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
