@@ -27,7 +27,7 @@ from threading import Lock
 from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import analisar_exames
@@ -198,10 +198,55 @@ def documentos() -> list[dict[str, Any]]:
                 "regioes": sorted(achados_por_arquivo.get(a["arquivo"], set())),
                 "aviso": a.get("aviso", ""),
                 "origem": a.get("origem", "analisador"),
+                "pdf": _achar_pdf(a["arquivo"]) is not None,
                 "status": "achados" if achados_por_arquivo.get(a["arquivo"]) else _status_documento(len(rs), len(fora), a.get("tipo", "")),
             }
         )
     return sorted(saida, key=lambda d: d.get("data") or "", reverse=True)
+
+
+# ------------------------------------------------------------------ PDFs (abrir / baixar / imprimir)
+
+# Pastas onde procurar o PDF original de cada documento: os enviados pelo painel
+# e, opcionalmente, outras pastas (somente leitura) separadas por ":".
+PDF_DIRS = ([UPLOAD_DIR / "pdfs"] if UPLOAD_DIR else []) + [
+    Path(x) for x in os.environ.get("ANALISADOR_PDF_DIR", "").split(":") if x.strip()
+]
+_cache_pdfs: dict[str, Any] = {"quando": 0.0, "indice": {}}
+
+
+def _indice_pdfs() -> dict[str, Path]:
+    """nome do arquivo -> caminho real. So entram arquivos dentro das pastas
+    configuradas, entao o endpoint nunca serve nada fora delas."""
+    agora = time.time()
+    if agora - _cache_pdfs["quando"] < 30:
+        return _cache_pdfs["indice"]
+    indice: dict[str, Path] = {}
+    for pasta in PDF_DIRS:
+        if not pasta.is_dir():
+            continue
+        for arq in pasta.rglob("*"):
+            if arq.is_file() and arq.suffix.lower() == ".pdf" and not arq.name.startswith("."):
+                indice.setdefault(arq.name, arq)
+    _cache_pdfs.update(quando=agora, indice=indice)
+    return indice
+
+
+def _achar_pdf(arquivo: str) -> Path | None:
+    return _indice_pdfs().get(Path(arquivo or "").name)
+
+
+@app.get("/api/documentos/{arquivo}/pdf")
+def baixar_pdf(arquivo: str, baixar: bool = False) -> FileResponse:
+    caminho = _achar_pdf(arquivo)
+    if caminho is None:
+        raise HTTPException(404, "O PDF original desse documento não está guardado no servidor.")
+    return FileResponse(
+        caminho,
+        media_type="application/pdf",
+        filename=caminho.name,
+        content_disposition_type="attachment" if baixar else "inline",
+    )
 
 
 @app.get("/api/marcadores")
@@ -598,12 +643,99 @@ def imagens() -> dict[str, Any]:
     return resposta
 
 
+_ID_ORTHANC = re.compile(r"^[0-9a-f]{8}(-[0-9a-f]{8}){4}$")
+
+
+def _validar_id(ident: str) -> str:
+    if not ORTHANC_URL:
+        raise HTTPException(503, "Servidor de imagens não configurado.")
+    if not _ID_ORTHANC.match(ident or ""):
+        raise HTTPException(404, "Exame não encontrado.")
+    return ident
+
+
+def _numero(v: Any) -> float:
+    try:
+        return float(str(v).strip())
+    except (TypeError, ValueError):
+        return 1e9
+
+
+@app.get("/api/imagens/{estudo}/series")
+def series_do_estudo(estudo: str) -> dict[str, Any]:
+    """Series e imagens (em ordem) de um exame, para a pagina de impressao."""
+    _validar_id(estudo)
+    try:
+        info = _orthanc_get(f"/studies/{estudo}")
+        series = _orthanc_get(f"/studies/{estudo}/series")
+        saida = []
+        for se in sorted(series, key=lambda x: _numero(x.get("MainDicomTags", {}).get("SeriesNumber"))):
+            instancias = _orthanc_get(f"/series/{se['ID']}/instances")
+            ordem = sorted(instancias, key=lambda i: _numero(i.get("MainDicomTags", {}).get("InstanceNumber")))
+            tags = se.get("MainDicomTags", {})
+            saida.append({
+                "id": se["ID"],
+                "numero": tags.get("SeriesNumber", ""),
+                "modalidade": tags.get("Modality", ""),
+                "descricao": tags.get("SeriesDescription", ""),
+                "imagens": [i["ID"] for i in ordem],
+            })
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(404 if exc.code == 404 else 502, "Exame não encontrado no servidor de imagens.") from exc
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise HTTPException(502, "Servidor de imagens indisponível.") from exc
+    tags = info.get("MainDicomTags", {})
+    return {"id": estudo, "data": _data_dicom(tags.get("StudyDate")), "descricao": tags.get("StudyDescription", ""), "series": saida}
+
+
+@app.get("/api/imagens/instancia/{instancia}.png")
+def imagem_png(instancia: str) -> Response:
+    """Uma imagem pronta para tela/impressao (PNG gerado pelo Orthanc)."""
+    _validar_id(instancia)
+    try:
+        with urllib.request.urlopen(f"{ORTHANC_URL}/instances/{instancia}/preview", timeout=30) as r:
+            dados = r.read()
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(404, "Imagem não encontrada.") from exc
+    except (urllib.error.URLError, OSError) as exc:
+        raise HTTPException(502, "Servidor de imagens indisponível.") from exc
+    return Response(dados, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"})
+
+
+@app.get("/api/imagens/{estudo}/zip")
+def baixar_estudo(estudo: str) -> StreamingResponse:
+    """Exame inteiro em DICOM (zip), ja anonimizado na importacao."""
+    _validar_id(estudo)
+    try:
+        info = _orthanc_get(f"/studies/{estudo}")
+        resp = urllib.request.urlopen(f"{ORTHANC_URL}/studies/{estudo}/archive", timeout=300)
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(404, "Exame não encontrado.") from exc
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise HTTPException(502, "Servidor de imagens indisponível.") from exc
+    tags = info.get("MainDicomTags", {})
+    desc = _NOME_SEGURO.sub("_", tags.get("StudyDescription", "") or "exame").strip("_")[:60] or "exame"
+    nome = f"Imagens_{_data_dicom(tags.get('StudyDate')) or 'sem-data'}_{desc}.zip"
+
+    def blocos():
+        with resp:
+            while True:
+                bloco = resp.read(1024 * 1024)
+                if not bloco:
+                    break
+                yield bloco
+
+    return StreamingResponse(blocos(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
 # Frontend compilado (npm run build). Em desenvolvimento, o Vite serve o frontend.
 if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
     @app.get("/{caminho:path}", include_in_schema=False)
     def spa(caminho: str) -> FileResponse:
+        if caminho.startswith("api/") or caminho == "api":
+            raise HTTPException(404, "Rota da API inexistente.")
         arquivo = (FRONTEND_DIST / caminho).resolve()
         if caminho and arquivo.is_file() and FRONTEND_DIST.resolve() in arquivo.parents:
             return FileResponse(arquivo)

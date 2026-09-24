@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useApi, type EstudoImagem, type RespostaImagens } from '../api'
 import { Aviso, Carregando, Painel } from '../components/Painel'
 import { fmtData } from '../format'
+import { href } from '../rota'
 
 const MODALIDADES: Record<string, string> = {
   MR: 'Ressonância',
@@ -34,22 +35,38 @@ function CartaoEstudo({ e }: { e: EstudoImagem }) {
         </div>
         {e.laudos.length > 0 && (
           <div className="mt-1 text-xs text-muted">
-            Laudo do mesmo dia: <span className="text-ink">{e.laudos.join(', ')}</span>
+            Laudo do mesmo dia:{' '}
+            {e.laudos.map((l, k) => (
+              <span key={l}>
+                {k > 0 && ', '}
+                <a href={`/api/documentos/${encodeURIComponent(l)}/pdf`} target="_blank" rel="noopener" className="text-teal hover:underline">{l}</a>
+              </span>
+            ))}
           </div>
         )}
       </div>
-      <a
-        href={e.visualizador}
-        target="_blank"
-        rel="noopener"
-        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-teal px-4 py-2 text-sm font-medium text-white hover:bg-teal-deep"
-      >
-        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-        Abrir imagens
-      </a>
+      <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-stretch">
+        <a
+          href={e.visualizador}
+          target="_blank"
+          rel="noopener"
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal px-4 py-2 text-sm font-medium text-white hover:bg-teal-deep"
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          Abrir imagens
+        </a>
+        <div className="flex gap-2">
+          <a href={href('imprimir', { estudo: e.id })} className="inline-flex flex-1 items-center justify-center rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink hover:bg-canvas">
+            Imprimir
+          </a>
+          <a href={`/api/imagens/${e.id}/zip`} title="Arquivos DICOM originais (sem seus dados pessoais), para outro visualizador ou para levar ao médico" className="inline-flex flex-1 items-center justify-center rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink hover:bg-canvas">
+            Baixar
+          </a>
+        </div>
+      </div>
     </li>
   )
 }

@@ -5,6 +5,7 @@ import { Evolucao } from './pages/Evolucao'
 import { AnatomiaPage } from './pages/AnatomiaPage'
 import { Documentos } from './pages/Documentos'
 import { Imagens } from './pages/Imagens'
+import { ImprimirImagens } from './pages/ImprimirImagens'
 
 const NAV: { id: Pagina; rotulo: string; icone: string }[] = [
   { id: 'visao-geral', rotulo: 'Visão geral', icone: 'M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z' },
@@ -39,9 +40,9 @@ export default function App() {
   const resumo = useApi<Resumo>('/api/resumo')
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[248px_1fr] lg:bg-[linear-gradient(to_right,#fff_247px,#dce5e6_247px,#dce5e6_248px,transparent_248px)]">
+    <div className="min-h-screen lg:grid lg:grid-cols-[248px_1fr] print:!block print:!bg-none lg:bg-[linear-gradient(to_right,#fff_247px,#dce5e6_247px,#dce5e6_248px,transparent_248px)]">
       {/* Barra lateral (desktop) */}
-      <aside className="sticky top-0 hidden h-screen flex-col bg-white px-4 py-6 lg:flex">
+      <aside className="sticky top-0 hidden h-screen print:!hidden flex-col bg-white px-4 py-6 lg:flex">
         <div className="px-2"><Marca /></div>
         <nav className="mt-8 flex flex-col gap-1" aria-label="Seções">
           {NAV.map((n) => {
@@ -62,7 +63,7 @@ export default function App() {
       </aside>
 
       {/* Topo (celular e tablet) */}
-      <header className="sticky top-0 z-20 border-b border-line bg-white/95 backdrop-blur lg:hidden">
+      <header className="sticky top-0 z-20 print:hidden border-b border-line bg-white/95 backdrop-blur lg:hidden">
         <div className="px-4 pt-3"><Marca /></div>
         <nav className="flex gap-1 overflow-x-auto px-3 py-2" aria-label="Seções">
           {NAV.map((n) => {
@@ -82,6 +83,7 @@ export default function App() {
         {rota.pagina === 'evolucao' && <Evolucao marcadorInicial={rota.params.get('m')} />}
         {rota.pagina === 'anatomia' && <AnatomiaPage vistaInicial={rota.params.get('vista')} regiaoInicial={rota.params.get('r')} />}
         {rota.pagina === 'imagens' && <Imagens />}
+        {rota.pagina === 'imprimir' && <ImprimirImagens estudo={rota.params.get('estudo')} />}
         {rota.pagina === 'documentos' && <Documentos />}
       </main>
     </div>

@@ -1,3 +1,4 @@
+import io
 import unittest
 from unittest import mock
 
@@ -471,7 +472,7 @@ class ImportarImagensTests(unittest.TestCase):
         import tempfile as _tf
         import importar_imagens as I
         dcm = self._dicom()
-        z = _zip({"DICOM/S1/IM0001": dcm, "DICOMDIR": b"x" * 200, "Viewer.exe": b"MZ" + b"0" * 300, "outro.zip": _zip({"IM2": dcm})})
+        z = _zip({"DICOM/S1/IM0001": dcm, "exam/DICOMDIR": b"\0" * 128 + b"DICM" + b"x" * 100, "Viewer.exe": b"MZ" + b"0" * 300, "outro.zip": _zip({"IM2": dcm})})
         with _tf.TemporaryDirectory() as d:
             arq = Path(d) / "exame.zip"
             arq.write_bytes(z)
@@ -488,6 +489,80 @@ class ImportarImagensTests(unittest.TestCase):
             self.assertNotIn(proibido, texto)
         self.assertEqual(ds.StudyDescription, "RM - COLUNA CERVICAL")
         self.assertEqual(str(ds.ReferringPhysicianName), "HOFFMANN^CASSIANO")
+
+
+@unittest.skipUnless(_tem_httpx(), "precisa do httpx para o TestClient")
+class BaixarImprimirTests(unittest.TestCase):
+    ID = "0123abcd-0123abcd-0123abcd-0123abcd-0123abcd"
+
+    def setUp(self):
+        import tempfile as _tf
+        from fastapi.testclient import TestClient
+        import api
+        self.api = api
+        self.tmp = _tf.TemporaryDirectory()
+        pasta = Path(self.tmp.name) / "pdfs"
+        pasta.mkdir()
+        (pasta / "Laudo_A.pdf").write_bytes(_pdf_simples("A"))
+        (Path(self.tmp.name) / "segredo.txt").write_text("nao")
+        self._dirs = api.PDF_DIRS
+        api.PDF_DIRS = [pasta]
+        api._cache_pdfs.update(quando=0.0, indice={})
+        api.ORTHANC_URL = "http://orthanc:8042"
+        self.c = TestClient(api.app)
+
+    def tearDown(self):
+        self.api.PDF_DIRS = self._dirs
+        self.api._cache_pdfs.update(quando=0.0, indice={})
+        self.api.ORTHANC_URL = ""
+        self.tmp.cleanup()
+
+    def test_pdf_abrir_e_baixar(self):
+        r = self.c.get("/api/documentos/Laudo_A.pdf/pdf")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.content.startswith(b"%PDF"))
+        self.assertIn("inline", r.headers["content-disposition"])
+        r = self.c.get("/api/documentos/Laudo_A.pdf/pdf?baixar=true")
+        self.assertIn("attachment", r.headers["content-disposition"])
+
+    def test_pdf_nao_sai_da_pasta(self):
+        for nome in ("..%2Fsegredo.txt", "segredo.txt", "nao_existe.pdf", "..%2F..%2Fetc%2Fpasswd"):
+            with self.subTest(nome=nome):
+                r = self.c.get(f"/api/documentos/{nome}/pdf")
+                self.assertEqual(r.status_code, 404)
+                self.assertNotIn(b"nao", r.content)
+
+    def test_ids_invalidos_recusados(self):
+        for url in ("/api/imagens/..%2Fsystem/series", "/api/imagens/abc/zip", "/api/imagens/instancia/x.png"):
+            with self.subTest(url=url):
+                self.assertEqual(self.c.get(url).status_code, 404)
+
+    def test_series_em_ordem(self):
+        resp = {
+            f"/studies/{self.ID}": {"MainDicomTags": {"StudyDate": "20250723", "StudyDescription": "RX LOMBAR"}},
+            f"/studies/{self.ID}/series": [
+                {"ID": "s2", "MainDicomTags": {"SeriesNumber": "2", "Modality": "DX", "SeriesDescription": "PERFIL"}},
+                {"ID": "s1", "MainDicomTags": {"SeriesNumber": "1", "Modality": "DX", "SeriesDescription": "AP"}},
+            ],
+            "/series/s1/instances": [{"ID": "i3", "MainDicomTags": {"InstanceNumber": "10"}}, {"ID": "i1", "MainDicomTags": {"InstanceNumber": "2"}}],
+            "/series/s2/instances": [{"ID": "i9", "MainDicomTags": {}}],
+        }
+        with mock.patch.object(self.api, "_orthanc_get", side_effect=lambda c: resp[c]):
+            r = self.c.get(f"/api/imagens/{self.ID}/series").json()
+        self.assertEqual(r["data"], "2025-07-23")
+        self.assertEqual([s["descricao"] for s in r["series"]], ["AP", "PERFIL"])
+        self.assertEqual(r["series"][0]["imagens"], ["i1", "i3"])
+
+    def test_zip_do_exame(self):
+        class Resp(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): self.close()
+        with mock.patch.object(self.api, "_orthanc_get", return_value={"MainDicomTags": {"StudyDate": "20251031", "StudyDescription": "US ARTICULAR"}}), \
+             mock.patch.object(self.api.urllib.request, "urlopen", return_value=Resp(b"PK\x03\x04zip")):
+            r = self.c.get(f"/api/imagens/{self.ID}/zip")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.content, b"PK\x03\x04zip")
+        self.assertIn('Imagens_2025-10-31_US_ARTICULAR.zip', r.headers["content-disposition"])
 
 if __name__ == "__main__":
     unittest.main()

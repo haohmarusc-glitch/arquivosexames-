@@ -29,6 +29,7 @@ export interface Documento {
   regioes: string[]
   aviso: string
   origem?: 'analisador' | 'upload'
+  pdf?: boolean
   status: StatusDoc
 }
 
@@ -78,6 +79,21 @@ export interface EstudoImagem {
   imagens: number
   visualizador: string
   laudos: string[]
+}
+
+export interface SerieImagem {
+  id: string
+  numero: string
+  modalidade: string
+  descricao: string
+  imagens: string[]
+}
+
+export interface EstudoSeries {
+  id: string
+  data: string | null
+  descricao: string
+  series: SerieImagem[]
 }
 
 export interface RespostaImagens {

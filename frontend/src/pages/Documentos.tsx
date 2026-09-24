@@ -32,6 +32,12 @@ export function TabelaDocumentos({ documentos }: { documentos: Documento[] }) {
                 <div className="max-w-[28ch] truncate text-xs text-muted" title={d.arquivo}>{d.arquivo}</div>
                 {d.aviso && <div className="mt-0.5 text-xs text-alto">{d.aviso}</div>}
                 {d.origem === 'upload' && <div className="mt-0.5 text-xs text-teal">Enviado pelo painel</div>}
+                {d.pdf && (
+                  <div className="mt-1 flex gap-3 text-xs font-medium">
+                    <a href={`/api/documentos/${encodeURIComponent(d.arquivo)}/pdf`} target="_blank" rel="noopener" className="text-teal hover:underline">Abrir / imprimir</a>
+                    <a href={`/api/documentos/${encodeURIComponent(d.arquivo)}/pdf?baixar=true`} className="text-teal hover:underline">Baixar PDF</a>
+                  </div>
+                )}
               </td>
               <td className="px-3 py-3">
                 <div className="flex flex-wrap gap-1">

@@ -102,6 +102,13 @@ def anonimizar(ds: Dataset) -> Dataset:
     return ds
 
 
+SOP_DICOMDIR = "1.2.840.10008.1.3.10"  # indice do CD/pasta, nao e imagem
+
+
+def e_indice(nome: str) -> bool:
+    return Path(nome).name.upper() in ("DICOMDIR", "DICOMDIR.DCM")
+
+
 def parece_dicom(dados: bytes) -> bool:
     return len(dados) >= 132 and dados[128:132] == b"DICM"
 
@@ -110,7 +117,7 @@ def encontrar_dicoms(caminho: Path) -> Iterator[tuple[str, bytes]]:
     """Gera (nome, bytes) de cada DICOM em um arquivo, zip ou pasta."""
     if caminho.is_dir():
         for p in sorted(caminho.rglob("*")):
-            if p.is_file():
+            if p.is_file() and not e_indice(p.name):
                 yield from encontrar_dicoms(p)
         return
     with caminho.open("rb") as f:
@@ -124,7 +131,7 @@ def encontrar_dicoms(caminho: Path) -> Iterator[tuple[str, bytes]]:
 
 def _dicoms_no_zip(z: zipfile.ZipFile, origem: str, profundidade: int) -> Iterator[tuple[str, bytes]]:
     for m in z.infolist():
-        if m.is_dir() or m.file_size > MAX_ARQUIVO or "__MACOSX" in m.filename:
+        if m.is_dir() or m.file_size > MAX_ARQUIVO or "__MACOSX" in m.filename or e_indice(m.filename):
             continue
         with z.open(m) as f:
             cabeca = f.read(132)
@@ -178,6 +185,8 @@ def importar(caminhos: list[Path], orthanc: Orthanc, simular: bool = False) -> R
             for nome, dados in encontrar_dicoms(caminho):
                 try:
                     ds = pydicom.dcmread(io.BytesIO(dados), force=True)
+                    if str(ds.get("SOPClassUID", "")) == SOP_DICOMDIR or "SOPInstanceUID" not in ds:
+                        continue  # indice ou arquivo sem imagem
                     anonimizar(ds)
                     saida = io.BytesIO()
                     ds.save_as(saida, enforce_file_format=True)
@@ -191,6 +200,12 @@ def importar(caminhos: list[Path], orthanc: Orthanc, simular: bool = False) -> R
                         rel.repetidos += 1
                     else:
                         rel.novos += 1
+                except urllib.error.HTTPError as exc:
+                    # O Orthanc respondeu, mas recusou: mostra o motivo que ele deu.
+                    detalhe = exc.read()[:400].decode("utf-8", "replace").replace("\n", " ")
+                    rel.erros.append(f"{nome}: Orthanc respondeu HTTP {exc.code}: {detalhe}")
+                    if len(rel.erros) >= 3 and not (rel.novos or rel.repetidos):
+                        raise RuntimeError("O Orthanc recusou as primeiras imagens: " + " | ".join(rel.erros)) from exc
                 except (urllib.error.URLError, OSError) as exc:
                     raise RuntimeError(f"Orthanc indisponível em {orthanc.url}: {exc}") from exc
                 except Exception as exc:  # um arquivo ruim nao para o resto

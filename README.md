@@ -295,3 +295,15 @@ done
 ```
 
 Reimportar o mesmo zip não duplica nada.
+
+### Baixar e imprimir
+
+- **Documentos**: cada laudo com PDF guardado no servidor mostra "Abrir /
+  imprimir" (abre no navegador; imprima por lá) e "Baixar PDF". Os enviados pela
+  caixa ficam em `/srv/saude/uploads/pdfs`. Para os do analisador principal,
+  deixe os PDFs numa pasta e monte no container:
+  `-v /srv/saude/laudos:/laudos:ro -e ANALISADOR_PDF_DIR=/laudos`
+  (varias pastas: separe com `:`).
+- **Imagens**: "Baixar" gera o zip DICOM do exame (já anonimizado);
+  "Imprimir" abre uma página com as imagens em grade (escolha série e imagens
+  por linha; "Salvar como PDF" na janela de impressão também funciona).

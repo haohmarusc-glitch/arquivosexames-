@@ -112,3 +112,11 @@ cd frontend && npm run build && cd ..
   nome do paciente vai junto. Texto queimado nos pixels nao e removido.
 - API: `GET /api/imagens` (precisa `ORTHANC_URL` no saude-app); frontend
   `pages/Imagens.tsx`. Disco do VPS e pequeno: importar zip a zip e apagar.
+- Baixar/imprimir: `GET /api/documentos/{arquivo}/pdf[?baixar=true]` (so PDFs
+  indexados em `PDF_DIRS` = uploads/pdfs + `ANALISADOR_PDF_DIR`; o PDF original
+  tem nome do paciente, mas e o arquivo dele, atras do basic_auth);
+  `/api/imagens/{id}/series`, `/api/imagens/instancia/{id}.png` (preview do
+  Orthanc), `/api/imagens/{id}/zip` (archive). IDs validados por regex.
+  Pagina `#/imprimir?estudo=` (menu some com `print:hidden`).
+- `importar_imagens.py` pula DICOMDIR (indice do CD) — enviar ao Orthanc dava
+  404 "Inexistent tag".
