@@ -1,26 +1,36 @@
 #!/usr/bin/env python3
-"""API somente leitura para o painel React.
+"""API do painel React.
 
 Le o resultados.json produzido pelo analisador e expoe endpoints agregados.
-Deve rodar ligada a 127.0.0.1 e ser acessada por tunel SSH.
+Opcionalmente (ANALISADOR_UPLOAD_DIR definido) aceita envio de PDFs pelo
+painel: cada PDF passa pelo mesmo analisador e o resultado fica num arquivo
+separado (resultados_upload.json), mesclado na leitura. O resultados.json
+principal continua somente leitura (volume :ro no Docker).
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
+import tempfile
 from collections import defaultdict
+from dataclasses import asdict
 from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+import analisar_exames
 from mapa_exames import SISTEMAS, identificar
 
 RESULT_DIR = Path(os.environ.get("ANALISADOR_RESULT_DIR", "resultado"))
+UPLOAD_DIR = Path(os.environ["ANALISADOR_UPLOAD_DIR"]) if os.environ.get("ANALISADOR_UPLOAD_DIR") else None
+MAX_UPLOAD = int(os.environ.get("ANALISADOR_UPLOAD_MAX_MB", "25")) * 1024 * 1024
+analisar_exames.PERFIL["sexo"] = os.environ.get("ANALISADOR_SEXO") or None
 FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 NOME_TITULAR = os.environ.get("ANALISADOR_NOME", "")
 FORA = {"acima", "abaixo"}
@@ -32,24 +42,60 @@ _lock = Lock()
 
 
 def _enriquecer(r: dict[str, Any]) -> dict[str, Any]:
-    """Aceita JSONs antigos (sem exame_id/ref_min) recalculando o que faltar."""
-    if not r.get("exame_id"):
+    """Recalcula id/nome/sistema a partir do titulo extraido: assim uma mudanca
+    no mapa_exames.py (ex.: exame que saiu de "Outros") vale na hora, sem
+    precisar rodar o analisador de novo sobre todos os PDFs."""
+    if r.get("exame"):
         r["exame_id"], r["exame_nome"], r["sistema"] = identificar(r.get("exame"))
+    elif not r.get("exame_id"):
+        r["exame_id"], r["exame_nome"], r["sistema"] = identificar(None)
     r.setdefault("ref_min", None)
     r.setdefault("ref_max", None)
     return r
 
 
+def _arquivo_upload() -> Path | None:
+    return UPLOAD_DIR / "resultados_upload.json" if UPLOAD_DIR else None
+
+
+def _ler_upload() -> dict[str, Any]:
+    caminho = _arquivo_upload()
+    if not caminho or not caminho.exists():
+        return {"arquivos": [], "resultados": [], "achados": []}
+    return json.loads(caminho.read_text(encoding="utf-8"))
+
+
+def _mesclar(principal: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+    """Junta os envios pelo painel ao resultado principal, ignorando PDFs que o
+    analisador principal ja processou (mesmo sha256, mesmo texto ou mesmo nome)."""
+    base = principal.get("arquivos", [])
+    shas = {a.get("sha256") for a in base}
+    textos = {a.get("hash_texto") for a in base if a.get("hash_texto")}
+    nomes = {a.get("arquivo") for a in base}
+    aceitos = {
+        a["arquivo"] for a in extra.get("arquivos", [])
+        if a.get("sha256") not in shas and a.get("hash_texto") not in textos and a["arquivo"] not in nomes
+    }
+    saida = dict(principal)
+    saida["arquivos"] = base + [dict(a, origem="upload") for a in extra.get("arquivos", []) if a["arquivo"] in aceitos]
+    saida["resultados"] = principal.get("resultados", []) + [r for r in extra.get("resultados", []) if r["arquivo"] in aceitos]
+    saida["achados"] = principal.get("achados", []) + [a for a in extra.get("achados", []) if a["arquivo"] in aceitos]
+    return saida
+
+
 def carregar() -> dict[str, Any]:
     caminho = RESULT_DIR / "resultados.json"
-    if not caminho.exists():
-        raise HTTPException(404, f"Nenhuma análise encontrada em {RESULT_DIR}. Execute o analisador primeiro.")
-    mtime = caminho.stat().st_mtime
+    extra = _arquivo_upload()
+    tem_extra = bool(extra and extra.exists())
+    if not caminho.exists() and not tem_extra:
+        raise HTTPException(404, f"Nenhuma análise encontrada em {RESULT_DIR}. Execute o analisador ou envie um PDF pelo painel.")
+    mtime = (caminho.stat().st_mtime if caminho.exists() else 0, extra.stat().st_mtime if tem_extra else 0)
     with _lock:
         if _cache["mtime"] != mtime:
-            bruto = json.loads(caminho.read_text(encoding="utf-8"))
+            bruto = json.loads(caminho.read_text(encoding="utf-8")) if caminho.exists() else {"arquivos": [], "resultados": [], "achados": [], "erros": []}
+            bruto = _mesclar(bruto, _ler_upload())
             bruto["resultados"] = [_enriquecer(r) for r in bruto.get("resultados", [])]
-            _cache.update(mtime=mtime, dados=bruto, gerado_em=mtime)
+            _cache.update(mtime=mtime, dados=bruto, gerado_em=max(mtime))
         return _cache["dados"]
 
 
@@ -145,6 +191,7 @@ def documentos() -> list[dict[str, Any]]:
                 "sistemas": sorted({r["sistema"] for r in rs if r["sistema"] != "outros"}),
                 "regioes": sorted(achados_por_arquivo.get(a["arquivo"], set())),
                 "aviso": a.get("aviso", ""),
+                "origem": a.get("origem", "analisador"),
                 "status": "achados" if achados_por_arquivo.get(a["arquivo"]) else _status_documento(len(rs), len(fora), a.get("tipo", "")),
             }
         )
@@ -256,6 +303,140 @@ def achados() -> list[dict[str, Any]]:
     # frontend quebra a pagina inteira ao tentar ler esse campo ausente.
     todos = [dict(a, titulo="", niveis_historicos=a.get("niveis_historicos", [])) for a in dados.get("achados", [])] + _achados_manuais()
     return sorted(todos, key=lambda a: a.get("data") or "", reverse=True)
+
+
+# ------------------------------------------------------------------ Upload
+
+_NOME_SEGURO = re.compile(r"[^A-Za-z0-9._-]+")
+_lock_upload = Lock()
+
+
+def _nome_seguro(nome: str) -> str:
+    base = Path(nome or "exame.pdf").name
+    base = _NOME_SEGURO.sub("_", base).strip("._") or "exame"
+    if not base.lower().endswith(".pdf"):
+        base += ".pdf"
+    return base[-120:]
+
+
+def _gravar_json(caminho: Path, dados: dict[str, Any]) -> None:
+    """Escrita atomica: um erro no meio nao deixa o arquivo pela metade."""
+    fd, tmp = tempfile.mkstemp(dir=caminho.parent, prefix=".upload-", suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(dados, f, ensure_ascii=False, indent=2)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, caminho)
+
+
+def _resumo_envio(item: dict[str, Any], resultados: list[dict[str, Any]], achados: list[dict[str, Any]]) -> dict[str, Any]:
+    por_sistema: dict[str, list[str]] = defaultdict(list)
+    fora = 0
+    for r in resultados:
+        mid, nome, sistema = identificar(r.get("exame"))
+        if mid == "nao_identificado":
+            continue
+        if nome not in por_sistema[sistema]:
+            por_sistema[sistema].append(nome)
+        fora += r.get("classificacao") in FORA
+    return {
+        "arquivo": item["arquivo"],
+        "status": "adicionado",
+        "tipo": item.get("tipo"),
+        "data": item.get("data"),
+        "resultados": len(resultados),
+        "fora": fora,
+        "sistemas": [{"id": sid, "nome": SISTEMAS.get(sid, sid), "marcadores": nomes} for sid, nomes in sorted(por_sistema.items())],
+        "regioes": sorted({a.get("regiao", "outros") for a in achados}),
+        "aviso": item.get("aviso", ""),
+    }
+
+
+@app.get("/api/upload")
+def upload_status() -> dict[str, Any]:
+    return {"habilitado": UPLOAD_DIR is not None, "limite_mb": MAX_UPLOAD // (1024 * 1024)}
+
+
+@app.post("/api/upload")
+async def upload(arquivos: list[UploadFile] = File(...)) -> dict[str, Any]:
+    if UPLOAD_DIR is None:
+        raise HTTPException(503, "Envio desabilitado: defina ANALISADOR_UPLOAD_DIR (pasta gravável) no container.")
+    pasta_pdfs = UPLOAD_DIR / "pdfs"
+    pasta_pdfs.mkdir(parents=True, exist_ok=True, mode=0o700)
+    saida: list[dict[str, Any]] = []
+
+    with _lock_upload:
+        atual = carregar() if (RESULT_DIR / "resultados.json").exists() or _arquivo_upload().exists() else {"arquivos": []}
+        extra = _ler_upload()
+        vistos = {a["hash_texto"]: a["arquivo"] for a in atual.get("arquivos", []) if a.get("hash_texto")}
+        shas = {a.get("sha256"): a["arquivo"] for a in atual.get("arquivos", [])}
+        nomes = {a["arquivo"] for a in atual.get("arquivos", [])}
+        mudou = False
+
+        for enviado in arquivos:
+            nome = _nome_seguro(enviado.filename or "")
+            conteudo = await enviado.read(MAX_UPLOAD + 1)
+            if len(conteudo) > MAX_UPLOAD:
+                saida.append({"arquivo": nome, "status": "erro", "erro": f"Arquivo maior que {MAX_UPLOAD // (1024 * 1024)} MB."})
+                continue
+            if not conteudo.startswith(b"%PDF"):
+                saida.append({"arquivo": nome, "status": "erro", "erro": "Não é um PDF."})
+                continue
+            fd, tmp = tempfile.mkstemp(dir=pasta_pdfs, prefix=".envio-", suffix=".pdf")
+            os.write(fd, conteudo)
+            os.close(fd)
+            tmp_path = Path(tmp)
+            try:
+                digest = analisar_exames.sha256(tmp_path)
+                if digest in shas:
+                    saida.append({"arquivo": nome, "status": "duplicado", "igual_a": shas[digest]})
+                    tmp_path.unlink()
+                    continue
+                # Mesmo nome com conteudo diferente: acrescenta sufixo em vez de sobrescrever.
+                final = nome
+                n = 2
+                while final in nomes or (pasta_pdfs / final).exists():
+                    final = f"{Path(nome).stem}_{n}.pdf"
+                    n += 1
+                item, resultados, achados_pdf = analisar_exames.analisar_pdf(tmp_path, vistos, nome=final)
+                if item.tipo == "duplicado":
+                    saida.append({"arquivo": nome, "status": "duplicado", "igual_a": item.duplicado_de})
+                    tmp_path.unlink()
+                    continue
+                os.replace(tmp_path, pasta_pdfs / final)
+                os.chmod(pasta_pdfs / final, 0o600)
+                reg, res, ach = asdict(item), [asdict(r) for r in resultados], [asdict(a) for a in achados_pdf]
+                extra.setdefault("arquivos", []).append(reg)
+                extra.setdefault("resultados", []).extend(res)
+                extra.setdefault("achados", []).extend(ach)
+                shas[digest] = final
+                nomes.add(final)
+                mudou = True
+                saida.append(_resumo_envio(reg, res, ach))
+            except Exception as exc:  # layout inesperado nao derruba o envio dos demais
+                tmp_path.unlink(missing_ok=True)
+                saida.append({"arquivo": nome, "status": "erro", "erro": f"Não foi possível ler o PDF ({type(exc).__name__})."})
+
+        if mudou:
+            _gravar_json(_arquivo_upload(), extra)  # type: ignore[arg-type]
+    return {"envios": saida}
+
+
+@app.delete("/api/upload/{arquivo}")
+def remover_upload(arquivo: str) -> dict[str, Any]:
+    """Remove um PDF enviado pelo painel (so os enviados; o resultado principal nao e tocado)."""
+    if UPLOAD_DIR is None:
+        raise HTTPException(503, "Envio desabilitado.")
+    with _lock_upload:
+        extra = _ler_upload()
+        if not any(a["arquivo"] == arquivo for a in extra.get("arquivos", [])):
+            raise HTTPException(404, "Esse documento não foi enviado pelo painel.")
+        for chave in ("arquivos", "resultados", "achados"):
+            extra[chave] = [x for x in extra.get(chave, []) if x.get("arquivo") != arquivo]
+        _gravar_json(_arquivo_upload(), extra)  # type: ignore[arg-type]
+        pdf = (UPLOAD_DIR / "pdfs" / _nome_seguro(arquivo))
+        if pdf.resolve().parent == (UPLOAD_DIR / "pdfs").resolve():
+            pdf.unlink(missing_ok=True)
+    return {"removido": arquivo}
 
 
 # Frontend compilado (npm run build). Em desenvolvimento, o Vite serve o frontend.

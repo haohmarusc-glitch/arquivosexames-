@@ -15,22 +15,32 @@ export interface OrgaoImagem {
   sistema: string
   nome: string
   arquivo: string // caminho a partir de /anatomia/
+  tambem?: string[] // outros sistemas que tambem destacam este orgao (ex.: proteinas -> figado)
   caixa: Caixa
   proporcao: number // largura/altura da imagem original, para "contain"
 }
 
 // Orgaos clicaveis (tem exames de sangue associados) — vista de frente.
-// Caixas medidas diretamente na imagem composta unica (orgaos-frente.webp);
-// usadas so como area de clique/selecao — a propria imagem ja mostra os orgaos,
-// nao ha mais imagem separada por orgao nesta vista (ver "arquivo: ''").
+// Caixas medidas diretamente na imagem composta unica (orgaos-frente.webp,
+// 700x1725, desenhada com "slice": vx = 30.145 + px*0.37101, vy = 8 + py*0.37101).
+// Recalibradas em 2026-09 sobrepondo uma grade do viewBox na propria imagem.
+// Itens sem imagem propria (arquivo '') aparecem so como area de clique.
 export const ORGAOS_FRENTE: OrgaoImagem[] = [
-  { id: 'tireoide', sistema: 'tireoide', nome: 'Tireoide', arquivo: '', proporcao: 1, caixa: { x: 148, y: 93, w: 33, h: 16 } },
-  { id: 'coracao', sistema: 'coracao', nome: 'Coração', arquivo: '', proporcao: 1, caixa: { x: 141, y: 137, w: 52, h: 58 } },
-  { id: 'figado', sistema: 'figado', nome: 'Fígado', arquivo: '', proporcao: 1, caixa: { x: 94, y: 198, w: 76, h: 43 } },
-  { id: 'pancreas', sistema: 'pancreas', nome: 'Pâncreas', arquivo: '', proporcao: 1, caixa: { x: 125, y: 236, w: 69, h: 18 } },
+  { id: 'hipofise', sistema: 'hormonios', nome: 'Hipófise', arquivo: '', proporcao: 1, caixa: { x: 155, y: 44, w: 10, h: 8 } },
+  { id: 'tireoide', sistema: 'tireoide', nome: 'Tireoide', arquivo: '', proporcao: 1, caixa: { x: 148, y: 95, w: 25, h: 13 } },
+  { id: 'coracao', sistema: 'coracao', nome: 'Coração', arquivo: '', proporcao: 1, caixa: { x: 151, y: 145, w: 40, h: 50 } },
+  { id: 'figado', sistema: 'figado', tambem: ['proteinas'], nome: 'Fígado', arquivo: '', proporcao: 1, caixa: { x: 112, y: 193, w: 66, h: 35 } },
+  { id: 'baco', sistema: 'sangue', nome: 'Baço', arquivo: '', proporcao: 1, caixa: { x: 200, y: 196, w: 12, h: 31 } },
+  { id: 'pancreas', sistema: 'pancreas', nome: 'Pâncreas', arquivo: '', proporcao: 1, caixa: { x: 145, y: 227, w: 53, h: 18 } },
   // Corrigido: rim DIREITO da pessoa fica a ESQUERDA da tela (vista de frente).
-  { id: 'rimD', sistema: 'rins', nome: 'Rim direito', arquivo: '', proporcao: 1, caixa: { x: 125, y: 234, w: 20, h: 26 } },
-  { id: 'rimE', sistema: 'rins', nome: 'Rim esquerdo', arquivo: '', proporcao: 1, caixa: { x: 187, y: 234, w: 20, h: 26 } },
+  { id: 'rimD', sistema: 'rins', nome: 'Rim direito', arquivo: '', proporcao: 1, caixa: { x: 121, y: 233, w: 22, h: 27 } },
+  { id: 'rimE', sistema: 'rins', nome: 'Rim esquerdo', arquivo: '', proporcao: 1, caixa: { x: 187, y: 233, w: 20, h: 26 } },
+  { id: 'adrenalD', sistema: 'hormonios', nome: 'Suprarrenal direita', arquivo: '', proporcao: 1, caixa: { x: 127, y: 226, w: 12, h: 7 } },
+  { id: 'adrenalE', sistema: 'hormonios', nome: 'Suprarrenal esquerda', arquivo: '', proporcao: 1, caixa: { x: 189, y: 226, w: 12, h: 7 } },
+  { id: 'bexiga', sistema: 'rins', nome: 'Bexiga', arquivo: '', proporcao: 1, caixa: { x: 148, y: 335, w: 23, h: 16 } },
+  { id: 'prostata', sistema: 'prostata', nome: 'Próstata', arquivo: '', proporcao: 1, caixa: { x: 153, y: 351, w: 14, h: 10 } },
+  // A ilustracao nao desenha a genitalia: area esquematica logo abaixo do pube.
+  { id: 'testiculos', sistema: 'testiculos', nome: 'Testículos (região escrotal)', arquivo: '', proporcao: 1, caixa: { x: 151, y: 366, w: 18, h: 13 } },
 ]
 
 // Recorte (dentro da propria imagem composta) usado so para a animacao de
@@ -55,24 +65,46 @@ export const ORGAOS_COSTAS: OrgaoImagem[] = [
 // musculo + vasos + orgao individual, cada um como imagem propria. Mantida
 // para comparacao lado a lado com a versao de imagem composta unica.
 export const ORGAOS_FRENTE_CAMADAS: OrgaoImagem[] = [
-  { id: 'tireoide', sistema: 'tireoide', nome: 'Tireoide', arquivo: 'tireoide.webp', proporcao: 1.363, caixa: { x: 138, y: 86, w: 44, h: 20 } },
-  { id: 'coracao', sistema: 'coracao', nome: 'Coração', arquivo: 'coracao.webp', proporcao: 0.776, caixa: { x: 136, y: 128, w: 52, h: 62 } },
-  { id: 'figado', sistema: 'figado', nome: 'Fígado', arquivo: 'figado.webp', proporcao: 1.411, caixa: { x: 104, y: 148, w: 90, h: 55 } },
+  { id: 'hipofise', sistema: 'hormonios', nome: 'Hipófise', arquivo: '', proporcao: 1, caixa: { x: 155, y: 43, w: 10, h: 8 } },
+  // Tireoide desce um pouco: fica na base do pescoco (C5-T1), nao logo abaixo do queixo.
+  { id: 'tireoide', sistema: 'tireoide', nome: 'Tireoide', arquivo: 'tireoide.webp', proporcao: 1.363, caixa: { x: 138, y: 90, w: 44, h: 20 } },
+  // Coracao um pouco para a esquerda da pessoa (direita da tela), como na anatomia real.
+  { id: 'coracao', sistema: 'coracao', nome: 'Coração', arquivo: 'coracao.webp', proporcao: 0.776, caixa: { x: 140, y: 128, w: 52, h: 62 } },
+  { id: 'figado', sistema: 'figado', tambem: ['proteinas'], nome: 'Fígado', arquivo: 'figado.webp', proporcao: 1.411, caixa: { x: 104, y: 148, w: 90, h: 55 } },
   { id: 'pancreas', sistema: 'pancreas', nome: 'Pâncreas', arquivo: 'pancreas.webp', proporcao: 2.03, caixa: { x: 130, y: 206, w: 72, h: 26 } },
   // Corrigido: rim DIREITO da pessoa fica a ESQUERDA da tela (vista de frente).
-  { id: 'rimD', sistema: 'rins', nome: 'Rim direito', arquivo: 'rim-direito.webp', proporcao: 0.664, caixa: { x: 112, y: 198, w: 30, h: 48 } },
+  // Rim direito ~1 vertebra mais baixo que o esquerdo (empurrado pelo figado).
+  { id: 'rimD', sistema: 'rins', nome: 'Rim direito', arquivo: 'rim-direito.webp', proporcao: 0.664, caixa: { x: 112, y: 204, w: 30, h: 48 } },
   { id: 'rimE', sistema: 'rins', nome: 'Rim esquerdo', arquivo: 'rim-esquerdo.webp', proporcao: 0.655, caixa: { x: 178, y: 198, w: 30, h: 48 } },
+  { id: 'adrenalD', sistema: 'hormonios', nome: 'Suprarrenal direita', arquivo: '', proporcao: 1, caixa: { x: 121, y: 201, w: 12, h: 7 } },
+  { id: 'adrenalE', sistema: 'hormonios', nome: 'Suprarrenal esquerda', arquivo: '', proporcao: 1, caixa: { x: 187, y: 195, w: 12, h: 7 } },
+  { id: 'baco', sistema: 'sangue', nome: 'Baço', arquivo: '', proporcao: 1, caixa: { x: 206, y: 186, w: 12, h: 28 } },
+  // Bexiga: atras da sinfise pubica do esqueleto (y~300-312), antes ficava abaixo dela.
+  { id: 'bexiga', sistema: 'rins', nome: 'Bexiga', arquivo: 'bexiga.webp', proporcao: 0.931, caixa: { x: 146, y: 280, w: 28, h: 26 } },
+  { id: 'prostata', sistema: 'prostata', nome: 'Próstata', arquivo: '', proporcao: 1, caixa: { x: 154, y: 306, w: 12, h: 9 } },
+  { id: 'testiculos', sistema: 'testiculos', nome: 'Testículos (região escrotal)', arquivo: '', proporcao: 1, caixa: { x: 151, y: 324, w: 18, h: 13 } },
 ]
 
 export const DECORATIVOS_FRENTE_CAMADAS: { id: string; arquivo: string; proporcao: number; caixa: Caixa }[] = [
   { id: 'pulmaoD', arquivo: 'pulmao-direito.webp', proporcao: 0.615, caixa: { x: 108, y: 118, w: 50, h: 92 } },
   { id: 'pulmaoE', arquivo: 'pulmao-esquerdo.webp', proporcao: 0.649, caixa: { x: 162, y: 118, w: 50, h: 92 } },
   { id: 'estomago', arquivo: 'estomago.webp', proporcao: 0.858, caixa: { x: 172, y: 168, w: 44, h: 48 } },
-  { id: 'intestino', arquivo: 'intestinos.webp', proporcao: 0.871, caixa: { x: 118, y: 250, w: 84, h: 95 } },
-  { id: 'bexiga', arquivo: 'bexiga.webp', proporcao: 0.931, caixa: { x: 140, y: 300, w: 40, h: 36 } },
+  // Intestinos sobem para terminar na entrada da pelve; a bexiga virou orgao clicavel.
+  { id: 'intestino', arquivo: 'intestinos.webp', proporcao: 0.871, caixa: { x: 118, y: 236, w: 84, h: 78 } },
 ]
 
-export const AORTA_CAMADAS = "M168,202 C168,186 160,184 160,198 L160,420 C150,440 142,480 140,600 M160,420 C170,440 178,480 180,600 M160,176 C136,164 104,164 92,200 C86,260 80,340 74,430 M160,176 C184,164 216,164 228,200 C234,260 240,340 246,430 M156,172 L152,70 M164,172 L168,70"
+// Circulacao esquematica calibrada no esqueleto-frontal.webp (ombros ~95/225,125;
+// cotovelos ~78/242,223; punhos ~63/257,293; quadris ~130/190,298; joelhos
+// ~130/188,423; tornozelos ~130/188,553). A aorta se divide nas iliacas na
+// altura de L4 (y~255), nao nos joelhos como no desenho anterior.
+export const AORTA_CAMADAS = [
+  'M166,168 C166,140 156,136 158,158 L160,255',
+  'M160,255 C150,268 134,282 131,300 L130,423 L130,553 L129,592',
+  'M160,255 C170,268 186,282 189,300 L188,423 L188,553 L189,592',
+  'M158,140 C140,128 108,120 95,128 L78,223 L63,293 L60,322',
+  'M162,140 C180,128 212,120 225,128 L242,223 L257,293 L260,322',
+  'M156,140 L152,70 M164,140 L168,70',
+].join(' ')
 
 // ---------------------------------------------------------------------------
 // Vista de COSTAS "em camadas": esqueleto + musculo + vasos + orgao

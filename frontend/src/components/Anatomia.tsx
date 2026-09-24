@@ -97,7 +97,7 @@ function Organ({ o, base, ativo, alerta, esmaecido, onSelecionar }: { o: OrgaoIm
         cy={cy}
         rx={o.caixa.w / 2}
         ry={o.caixa.h / 2}
-        fill={o.arquivo ? 'transparent' : 'rgba(200,120,90,.14)'}
+        fill={o.arquivo ? 'transparent' : ativo ? 'rgba(29,91,90,.16)' : 'rgba(200,120,90,.14)'}
         stroke={ativo ? SELECAO : alerta ? ALERTA : 'transparent'}
         strokeWidth={ativo ? 2.4 : alerta ? 2 : 0}
         strokeDasharray={alerta && !ativo ? '4 2.5' : undefined}
@@ -148,7 +148,10 @@ function OrganCostasCamadas({ o, ativo, alerta, esmaecido, onSelecionar }: { o: 
 }
 
 export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao = 'frente', estiloFrente = 'composta', estiloCostas = 'composta' }: PropsOrgaos) {
-  const naoOrgao = ['sangue', 'inflamacao', 'vitaminas', 'outros', 'hormonios', 'prostata', 'proteinas']
+  // Sistemas sem orgao proprio na figura: selecionar um deles nao esmaece os orgaos.
+  const naoOrgao = ['inflamacao', 'vitaminas', 'outros']
+  const destaca = (o: { sistema: string; tambem?: string[] }) => selecionado === o.sistema || Boolean(selecionado && o.tambem?.includes(selecionado))
+  const esmaecer = (o: { sistema: string; tambem?: string[] }) => Boolean(selecionado) && !destaca(o) && !naoOrgao.includes(selecionado ?? '')
 
   if (orientacao === 'costas' && estiloCostas === 'composta') {
     return (
@@ -211,9 +214,9 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
           <OrganCostasCamadas
             key={o.id}
             o={o}
-            ativo={selecionado === o.sistema}
+            ativo={destaca(o)}
             alerta={comAlerta.has(o.sistema)}
-            esmaecido={Boolean(selecionado) && selecionado !== o.sistema && !naoOrgao.includes(selecionado ?? '')}
+            esmaecido={esmaecer(o)}
             onSelecionar={onSelecionar}
           />
         ))}
@@ -255,9 +258,9 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
             key={o.id}
             o={o}
             base="/anatomia/"
-            ativo={selecionado === o.sistema}
+            ativo={destaca(o)}
             alerta={comAlerta.has(o.sistema)}
-            esmaecido={Boolean(selecionado) && selecionado !== o.sistema && !naoOrgao.includes(selecionado ?? '')}
+            esmaecido={esmaecer(o)}
             onSelecionar={onSelecionar}
           />
         ))}
@@ -302,9 +305,9 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
           key={o.id}
           o={o}
           base="/anatomia/"
-          ativo={selecionado === o.sistema}
+          ativo={destaca(o)}
           alerta={comAlerta.has(o.sistema)}
-          esmaecido={Boolean(selecionado) && selecionado !== o.sistema && !naoOrgao.includes(selecionado ?? '')}
+          esmaecido={esmaecer(o)}
           onSelecionar={onSelecionar}
         />
       ))}

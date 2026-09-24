@@ -222,6 +222,51 @@ class AchadosTests(unittest.TestCase):
         self.assertEqual((a.regiao, a.lado), ("joelho", "esquerdo"))
 
 
+
+class MapaOutrosTests(unittest.TestCase):
+    """Exames que antes caiam em "Outros" e agora vao para o orgao certo."""
+
+    def test_reclassificados(self):
+        casos = {
+            "Di-Hidrotestosterona (Dht)": "hormonios",
+            "Rni": "figado",
+            "Tempo Paciente": "figado",
+            "Anticorpos Anti Hbs": "figado",
+            "Ph": "rins",
+            "Densidade": "rins",
+            "Células Epiteliais........P/Ml": "rins",
+            "Motilidade Progressiva": "testiculos",
+            "Motilidade Não Progressiva": "testiculos",
+            "Nº De Espermatozoides /Ml": "testiculos",
+            "Imóveis": "testiculos",
+            "PSA TOTAL": "prostata",
+        }
+        for titulo, sistema in casos.items():
+            with self.subTest(titulo=titulo):
+                self.assertEqual(identificar(titulo)[2], sistema)
+
+    def test_motilidade_nao_confunde(self):
+        self.assertNotEqual(identificar("Motilidade Não Progressiva")[0], identificar("Motilidade Progressiva")[0])
+
+
+class UploadMesclaTests(unittest.TestCase):
+    def test_upload_repetido_do_principal_e_ignorado(self):
+        import api
+        principal = {"arquivos": [{"arquivo": "a.pdf", "sha256": "x", "hash_texto": "t1"}], "resultados": [{"arquivo": "a.pdf"}], "achados": []}
+        extra = {
+            "arquivos": [{"arquivo": "b.pdf", "sha256": "x"}, {"arquivo": "c.pdf", "sha256": "y", "hash_texto": "t1"}, {"arquivo": "d.pdf", "sha256": "z"}],
+            "resultados": [{"arquivo": "b.pdf"}, {"arquivo": "c.pdf"}, {"arquivo": "d.pdf"}],
+            "achados": [],
+        }
+        m = api._mesclar(principal, extra)
+        self.assertEqual([a["arquivo"] for a in m["arquivos"]], ["a.pdf", "d.pdf"])
+        self.assertEqual([r["arquivo"] for r in m["resultados"]], ["a.pdf", "d.pdf"])
+
+    def test_nome_seguro(self):
+        import api
+        self.assertEqual(api._nome_seguro("../../etc/passwd"), "passwd.pdf")
+        self.assertEqual(api._nome_seguro("Exame João 01.pdf"), "Exame_Jo_o_01.pdf")
+
 if __name__ == "__main__":
     unittest.main()
 

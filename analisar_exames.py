@@ -62,6 +62,7 @@ class ExamFile:
     texto_extraido: bool
     duplicado_de: str | None = None
     aviso: str = ""
+    hash_texto: str = ""  # sha256 do texto normalizado, usado para detectar o mesmo laudo com bytes diferentes
 
 
 @dataclass
@@ -537,6 +538,41 @@ def extract_achados_seguro(nome: str, date: str | None, text: str) -> list[Achad
         return []
 
 
+def chave_texto(text: str, digest: str) -> str:
+    """Chave de duplicidade: o portal pode gerar bytes diferentes para o mesmo laudo."""
+    return hashlib.sha256(" ".join(text.split()).encode()).hexdigest() if text.strip() else digest
+
+
+def analisar_pdf(pdf: Path, vistos: dict[str, str], nome: str | None = None) -> tuple[ExamFile, list[LabResult], list[Achado]]:
+    """Processa um PDF. `vistos` (chave_texto -> nome) acumula os ja lidos para
+    marcar duplicados; `nome` permite registrar um nome diferente do arquivo em
+    disco (usado pelo upload do painel). Usado pela linha de comando e pela API."""
+    nome = nome or pdf.name
+    digest = sha256(pdf)
+    text, pages = extract_text(pdf)
+    chave = chave_texto(text, digest)
+    if chave in vistos:
+        return (ExamFile(nome, None, "duplicado", pages, digest, True, duplicado_de=vistos[chave],
+                         aviso=f"conteudo identico a {vistos[chave]}", hash_texto=chave), [], [])
+    vistos[chave] = nome
+    date = first_date(text, nome)
+    tipo = classify_file(nome, text)
+    aviso = ""
+    if tipo == "laboratorial" and _mentions_image(normalize(nome)):
+        aviso = "nome indica exame de imagem, mas o conteudo e laboratorial"
+    item = ExamFile(nome, date, tipo, pages, digest, bool(text.strip()), aviso=aviso, hash_texto=chave)
+    results: list[LabResult] = []
+    findings: list[Achado] = []
+    if tipo == "laboratorial":
+        results = extract_results(pdf, text, date)
+    elif tipo == "imagem" and text.strip():
+        findings = extract_achados_seguro(nome, date, text)
+    if nome != pdf.name:
+        for r in results:
+            r.arquivo = nome
+    return item, results, findings
+
+
 def write_csv(path: Path, rows: Iterable[object], fieldnames: list[str]) -> None:
     with path.open("w", encoding="utf-8-sig", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fieldnames)
@@ -603,26 +639,10 @@ def main() -> int:
         vistos: dict[str, str] = {}
         for pdf in pdfs:
             try:
-                digest = sha256(pdf)
-                text, pages = extract_text(pdf)
-                # Compara pelo texto: o portal pode gerar bytes diferentes para o mesmo laudo.
-                chave = hashlib.sha256(" ".join(text.split()).encode()).hexdigest() if text.strip() else digest
-                if chave in vistos:
-                    files.append(ExamFile(pdf.name, None, "duplicado", pages, digest, True, duplicado_de=vistos[chave],
-                                          aviso=f"conteudo identico a {vistos[chave]}"))
-                    continue
-                vistos[chave] = pdf.name
-                date = first_date(text, pdf.name)
-                tipo = classify_file(pdf.name, text)
-                aviso = ""
-                if tipo == "laboratorial" and _mentions_image(normalize(pdf.name)):
-                    aviso = "nome indica exame de imagem, mas o conteudo e laboratorial"
-                item = ExamFile(pdf.name, date, tipo, pages, digest, bool(text.strip()), aviso=aviso)
+                item, novos, achados_pdf = analisar_pdf(pdf, vistos)
                 files.append(item)
-                if tipo == "laboratorial":
-                    results.extend(extract_results(pdf, text, date))
-                elif tipo == "imagem" and text.strip():
-                    findings.extend(extract_achados_seguro(pdf.name, date, text))
+                results.extend(novos)
+                findings.extend(achados_pdf)
             except Exception as exc:
                 errors.append({"arquivo": pdf.name, "erro": str(exc)})
 

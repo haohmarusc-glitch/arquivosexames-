@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { REGIOES, useApi, type Documento, type Sistema } from '../api'
 import { BadgeStatus, TagSistema } from '../components/Badges'
 import { Aviso, Carregando, Painel } from '../components/Painel'
+import { EnviarExames } from '../components/EnviarExames'
 import { fmtData, TIPOS } from '../format'
 import { href } from '../rota'
 
@@ -30,6 +31,7 @@ export function TabelaDocumentos({ documentos }: { documentos: Documento[] }) {
                 <div className="font-medium">{TIPOS[d.tipo] ?? d.tipo}</div>
                 <div className="max-w-[28ch] truncate text-xs text-muted" title={d.arquivo}>{d.arquivo}</div>
                 {d.aviso && <div className="mt-0.5 text-xs text-alto">{d.aviso}</div>}
+                {d.origem === 'upload' && <div className="mt-0.5 text-xs text-teal">Enviado pelo painel</div>}
               </td>
               <td className="px-3 py-3">
                 <div className="flex flex-wrap gap-1">
@@ -71,6 +73,7 @@ export function Documentos() {
   return (
     <div className="space-y-6 px-4 py-8 lg:px-10">
       <h1 className="text-3xl font-bold tracking-tight">Documentos</h1>
+      <EnviarExames />
       {docs.erro && <Aviso tom="erro">{docs.erro}</Aviso>}
       <Painel
         titulo={docs.dados ? `${filtrados.length} de ${docs.dados.length}` : undefined}

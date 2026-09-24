@@ -5,7 +5,11 @@ achados de laudos de imagem (coluna, articulacoes). Uso pessoal do Jefferson.
 
 ## Stack
 - `analisar_exames.py` + `achados.py` + `mapa_exames.py`: extracao dos PDFs (Python, pypdf).
-- `api.py`: FastAPI, so leitura, serve `/api/*` e o frontend compilado.
+- `api.py`: FastAPI, serve `/api/*` e o frontend compilado. Leitura do
+  `resultados.json` + envio opcional de PDFs (`POST /api/upload`, grava em
+  `ANALISADOR_UPLOAD_DIR/resultados_upload.json`, mesclado na leitura).
+  O sistema de cada marcador e recalculado a partir do titulo na leitura, entao
+  mudar `mapa_exames.py` vale sem rodar o analisador de novo.
 - `frontend/`: React + TypeScript + Vite + Tailwind + Recharts (`npm run build` gera `frontend/dist`).
 - `test_analisador.py`: 31 testes (`.venv/bin/python -m unittest`), rode sempre antes de aplicar no VPS.
 
@@ -61,6 +65,17 @@ Code separado com uma ferramenta de imagem que esta sessao de chat nao tem.
   por sistema (venoso, arterial, muscular, nervoso, linfatico — existem
   arquivos prontos em `imagens-anatomia/camadas/` e `costas/` fora do repo,
   nao processados ainda).
+
+## Auditoria da anatomia (2026-09)
+- Caixas de `ORGAOS_FRENTE` recalibradas com uma grade do viewBox desenhada
+  sobre `orgaos-frente.webp` (vx = 30.145 + px*0.37101, vy = 8 + py*0.37101).
+- Novos hotspots: hipófise e suprarrenais (hormonios), baço (sangue), bexiga
+  (rins), próstata, testículos (novo sistema `testiculos`, espermograma).
+  `tambem: ['proteinas']` no fígado destaca-o na aba Proteínas.
+- Camadas: bexiga subiu para trás da sínfise púbica, intestinos encurtados,
+  rim direito mais baixo, coração deslocado para a esquerda da pessoa,
+  `AORTA_CAMADAS` refeita sobre `esqueleto-frontal.webp`.
+- Vista de costas continua só com rins (pendente).
 
 ## Cuidados importantes (ja corrigidos, nao regredir)
 - **Privacidade**: nome, CPF e data de nascimento do paciente NUNCA podem

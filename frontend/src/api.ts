@@ -28,6 +28,7 @@ export interface Documento {
   sistemas: string[]
   regioes: string[]
   aviso: string
+  origem?: 'analisador' | 'upload'
   status: StatusDoc
 }
 
@@ -75,6 +76,24 @@ export interface Estado<T> {
   recarregar: () => void
 }
 
+export const EVENTO_DADOS = 'dados-atualizados'
+export const avisarDadosMudaram = () => window.dispatchEvent(new Event(EVENTO_DADOS))
+
+export interface EnvioSistema { id: string; nome: string; marcadores: string[] }
+export interface Envio {
+  arquivo: string
+  status: 'adicionado' | 'duplicado' | 'erro'
+  tipo?: string
+  data?: string | null
+  resultados?: number
+  fora?: number
+  sistemas?: EnvioSistema[]
+  regioes?: string[]
+  aviso?: string
+  erro?: string
+  igual_a?: string
+}
+
 export function useApi<T>(caminho: string | null): Estado<T> {
   const [dados, setDados] = useState<T | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -99,6 +118,13 @@ export function useApi<T>(caminho: string | null): Estado<T> {
       .finally(() => setCarregando(false))
     return () => ctrl.abort()
   }, [caminho, versao])
+
+  // Um envio de PDF pelo painel dispara "dados-atualizados": todas as telas recarregam.
+  useEffect(() => {
+    const ouvir = () => setVersao((v) => v + 1)
+    window.addEventListener(EVENTO_DADOS, ouvir)
+    return () => window.removeEventListener(EVENTO_DADOS, ouvir)
+  }, [])
 
   const recarregar = useCallback(() => setVersao((v) => v + 1), [])
   return { dados, erro, carregando, recarregar }

@@ -8,7 +8,6 @@ import { fmtData, fmtNum, fmtReferencia } from '../format'
 import { href } from '../rota'
 
 type Vista = 'orgaos' | 'coluna'
-const SEM_ORGAO = ['sangue', 'inflamacao', 'vitaminas', 'outros']
 
 export function AnatomiaPage({ vistaInicial, regiaoInicial }: { vistaInicial: string | null; regiaoInicial: string | null }) {
   const [vista, setVista] = useState<Vista>(vistaInicial === 'coluna' ? 'coluna' : 'orgaos')
@@ -128,12 +127,14 @@ function PainelOrgaos({ sistemas, marcadores, achados, selecionado, onSelecionar
         <Painel>
           <p className="pt-5 text-sm text-muted">
             Toque em um órgão ou em uma das áreas acima. Contorno tracejado laranja indica pelo menos um marcador fora da referência no último resultado.
-            {' '}Sangue, inflamação e vitaminas não têm um órgão próprio na figura.
+            {' '}Inflamação e vitaminas não têm um órgão próprio na figura; Sangue destaca o baço e a circulação (em camadas).
           </p>
         </Painel>
       ) : (
         <Painel titulo={atual.nome} acoes={<span className="text-sm text-muted">{atual.marcadores} marcadores{atual.fora ? `, ${atual.fora} fora da referência` : ''}</span>}>
-          {SEM_ORGAO.includes(atual.id) && atual.id === 'sangue' && <p className="mb-3 text-xs text-muted">Circulação destacada na figura.</p>}
+          {atual.id === 'sangue' && <p className="mb-3 text-xs text-muted">Baço destacado na figura; a circulação aparece na vista em camadas.</p>}
+          {atual.id === 'proteinas' && <p className="mb-3 text-xs text-muted">A albumina e a maior parte das proteínas do sangue são produzidas pelo fígado.</p>}
+          {atual.id === 'testiculos' && <p className="mb-3 text-xs text-muted">Região marcada de forma esquemática — a ilustração não desenha a genitália.</p>}
           {lista.length > 0 && (
             <ul className="grid gap-3 sm:grid-cols-2">
               {lista.map((m) => <MiniMarcador key={m.id} marcador={m} />)}

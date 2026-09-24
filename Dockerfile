@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Apenas as dependencias que a API usa em tempo de execucao (nao inclui
 # streamlit/pandas, que so o painel antigo em frontend.py precisa).
-RUN pip install --no-cache-dir --break-system-packages fastapi "uvicorn[standard]" pypdf
+RUN pip install --no-cache-dir --break-system-packages fastapi "uvicorn[standard]" pypdf python-multipart
 
 COPY analisar_exames.py achados.py mapa_exames.py api.py ./
 COPY frontend/dist ./frontend/dist

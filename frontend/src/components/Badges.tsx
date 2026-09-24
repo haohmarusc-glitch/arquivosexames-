@@ -41,6 +41,7 @@ export const COR_SISTEMA: Record<string, string> = {
   vitaminas: 'bg-[#e9ecd9] text-[#5c6a25]',
   hormonios: 'bg-[#e4e6f6] text-[#43519a]',
   prostata: 'bg-[#e6eef6] text-[#35607f]',
+  testiculos: 'bg-[#e8e9f3] text-[#4a4f86]',
   proteinas: 'bg-[#efe9df] text-[#6b5a3c]',
   outros: 'bg-canvas text-muted',
 }

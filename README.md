@@ -185,9 +185,28 @@ docker run -d --name saude-app --restart unless-stopped \
   --network premercado_default \
   -e ANALISADOR_RESULT_DIR=/data \
   -e ANALISADOR_NOME=Jefferson \
+  -e ANALISADOR_SEXO=M \
+  -e ANALISADOR_UPLOAD_DIR=/uploads \
   -v /srv/saude/painel:/data:ro \
+  -v /srv/saude/uploads:/uploads \
   saude-exames:latest
 ```
+
+### Envio de PDFs pelo painel
+
+Em **Documentos → Enviar exames** dá para arrastar laudos em PDF. A API roda o
+mesmo analisador (`analisar_exames.analisar_pdf`) e grava o resultado em
+`/srv/saude/uploads/resultados_upload.json` (os PDFs ficam em
+`/srv/saude/uploads/pdfs/`, permissão 600). O `resultados.json` principal
+continua somente leitura; a API junta os dois na leitura e ignora um envio que
+o analisador principal ja tenha (mesmo sha256, mesmo texto ou mesmo nome).
+Cada marcador vai para o sistema definido em `mapa_exames.py`, e a tela mostra
+para onde foi cada exame. "Desfazer" remove só o que foi enviado pelo painel.
+
+Antes de recriar o container: `install -d -m 700 /srv/saude/uploads`.
+Sem `ANALISADOR_UPLOAD_DIR` o envio fica desligado (a caixa explica isso).
+Para ter cópia no Drive, inclua no cron algo como
+`rclone copy /srv/saude/uploads saude-crypt:exames/enviados-pelo-painel`.
 
 Depois que `./executar_no_servidor.sh` atualiza `/srv/saude/painel/resultados.json`, o container ve a mudanca sozinho (volume montado, sem precisar reiniciar).
 
