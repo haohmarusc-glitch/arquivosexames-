@@ -49,7 +49,7 @@ export const ORGAOS_FRENTE: OrgaoImagem[] = [
 // respiracao via clip-path — nao sao clicaveis, nao tem sistema associado.
 export const PULMOES_FRENTE = {
   pulmaoD: { x: 119, y: 169, w: 34, h: 60 },
-  pulmaoE: { x: 171, y: 169, w: 33, h: 60 },
+  pulmaoE: { x: 173, y: 169, w: 31, h: 60 },
 }
 
 // --- Vista de COSTAS -------------------------------------------------------
