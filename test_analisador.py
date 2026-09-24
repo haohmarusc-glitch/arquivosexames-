@@ -1,4 +1,5 @@
 import io
+import shutil
 import unittest
 from unittest import mock
 
@@ -108,8 +109,12 @@ class TabelasReferenciaTests(unittest.TestCase):
         tg = ("Para adultos acima de 20 anos:\nCom jejum: Inferior a 150 mg/dL\nSem jejum: Inferior a 175 mg/dL\n"
               "Para criancas e adolescentes de 0 a 9 anos:\nCom jejum: Inferior a 75 mg/dL")
         sel = select_reference(tg, "M", 50)
-        self.assertEqual(classification(200.0, sel), "acima")
-        self.assertEqual(classification(160.0, sel), "nao determinado")  # acima com jejum, dentro sem jejum
+        # Faixas que discordam (com/sem jejum) nao dao ref_min/ref_max unico; como a
+        # classificacao sai SO dos limites, fica "nao determinado" (antes 200 dava "acima"
+        # sem limite nenhum no grafico que justificasse).
+        self.assertEqual(A.limites_referencia(sel), (None, None))
+        self.assertEqual(classification(200.0, sel), "nao determinado")
+        self.assertEqual(classification(160.0, sel), "nao determinado")
 
     def test_meta_por_risco(self):
         ldl = "VALORES DE ALVO TERAPEUTICO SUGERIDO PARA CATEGORIA DE RISCO\n| BAIXO | INFERIOR A 115 mg/dL\n| ALTO | INFERIOR A 70 mg/dL"
@@ -587,3 +592,247 @@ class HistoricoTests(unittest.TestCase):
         texto = "RM LOMBAR\nRelatorio\nHernia em L4-L5, atualmente com resolucao completa do quadro."
         (a,) = extrair_achados("rm.pdf", None, texto)
         self.assertEqual(a.niveis_historicos, ["L4-L5"])
+
+
+def _r(**kw):
+    """Resultado minimo no formato do resultados.json (para consolidar/API)."""
+    base = {"arquivo": "a.pdf", "data": "2025-01-01", "exame": "GLICOSE", "valor_texto": "", "valor_numerico": 90.0,
+            "unidade": "mg/dL", "referencia": "", "ref_min": 70.0, "ref_max": 99.0, "classificacao": "dentro"}
+    base.update(kw)
+    return base
+
+
+class UrinaSangueTests(unittest.TestCase):
+    """1. Leucocitos/hemacias do EAS, sedimento e urocultura nao entram no hemograma."""
+
+    SEDIMENTO = (
+        "SEDIMENTO URINARIO QUANTITATIVO\nMaterial:\nUrina jato medio\nColeta:\n24/09/2025 - 08:00\n"
+        "Leucocitos.........:\n2.100\n/mL\nAte 10.000 /mL\nHemacias...........:\n900\n/mL\nAte 10.000 /mL\n"
+    )
+    HEMOGRAMA = PainelTests.TEXTO
+
+    def test_sedimento_vira_id_de_urina(self):
+        res = {r.exame_id: r for r in A.extract_results(Path("u.pdf"), self.SEDIMENTO, None)}
+        self.assertEqual(res["urina_leucocitos"].valor_numerico, 2100.0)
+        self.assertEqual(res["urina_hemacias"].valor_numerico, 900.0)
+        self.assertEqual(res["urina_leucocitos"].sistema, "rins")
+        self.assertNotIn("leucocitos", res)
+        self.assertNotIn("hemacias", res)
+
+    def test_hemograma_continua_no_sangue(self):
+        res = {r.exame_id for r in A.extract_results(Path("h.pdf"), self.HEMOGRAMA, None)}
+        self.assertIn("leucocitos", res)
+        self.assertIn("hemacias", res)
+
+    def test_secao_ou_unidade_de_urina(self):
+        for material, unidade in (("EAS / Urina", ""), ("UROCULTURA", ""), ("", "UFC/mL"), ("", "/campo"), ("", "p/mL")):
+            self.assertEqual(identificar("Leucocitos", material, unidade)[0], "urina_leucocitos", (material, unidade))
+        self.assertEqual(identificar("Hemacias", "", "/campo")[0], "urina_hemacias")
+        self.assertEqual(identificar("Leucocitos", "Sangue total com EDTA", "/mm3")[0], "leucocitos")
+        self.assertEqual(identificar("Hemacias", "Sangue", "milhoes/mm3")[0], "hemacias")
+
+    def test_consolidar_reclassifica_json_antigo_pela_unidade(self):
+        rs, _ = A.consolidar([_r(exame="Leucocitos", valor_numerico=100000.0, unidade="UFC/mL", data="2024-03-08")])
+        self.assertEqual(rs[0]["exame_id"], "urina_leucocitos")
+
+    def test_ponto_sem_unidade_fora_da_serie_de_sangue(self):
+        rs, _ = A.consolidar([
+            _r(arquivo="h1.pdf", exame="Leucocitos", valor_numerico=5000.0, unidade="/mm3", data="2025-01-01"),
+            _r(arquivo="h2.pdf", exame="Leucocitos", valor_numerico=6000.0, unidade="/mm3", data="2025-02-01"),
+            _r(arquivo="u.pdf", exame="Leucocitos", valor_numerico=25100.0, unidade="", data="2025-05-31"),
+        ])
+        sem = next(r for r in rs if r["valor_numerico"] == 25100.0)
+        self.assertFalse(sem["grafico"])
+        self.assertIn("/mm3", sem["motivo"])
+        self.assertTrue(all(r["grafico"] for r in rs if r is not sem))
+
+
+class IndiceTests(unittest.TestCase):
+    """2. "Indice" sozinho nao junta sorologias diferentes."""
+
+    TEXTO = (
+        "ANTI-HBS\nMaterial:\nSoro\nColeta:\n10/02/2025\nIndice.............:\n12,50\nInferior a 1,00\n"
+        "ANTI-HCV\nMaterial:\nSoro\nColeta:\n10/02/2025\nIndice.............:\n0,08\nInferior a 1,00\n"
+    )
+
+    def test_titulo_real_vem_das_linhas_acima(self):
+        res = A.extract_results(Path("s.pdf"), self.TEXTO, None)
+        ids = {r.exame_id for r in res}
+        self.assertEqual(ids, {"anti_hbs_indice", "anti_hcv_indice"})
+        self.assertTrue(all(r.grafico for r in res))
+
+    def test_formato_resultado_com_titulo_indice(self):
+        texto = ("ANTI-HBS\nMaterial:\nSoro\nColeta:\n10/02/2025\nINDICE\n \n \nResultado:\n12,50\n"
+                 "Valor de Referencia:\nInferior a 1,00\n")
+        res = A.extract_results(Path("s.pdf"), texto, None)
+        self.assertEqual([r.exame_id for r in res], ["anti_hbs_indice"])
+
+    def test_sem_titulo_nao_vai_para_o_grafico(self):
+        self.assertEqual(A.resolver_generico("Indice", ["Material: Soro", "12,5"], 1), ("Indice", False))
+        rs, _ = A.consolidar([_r(exame="Índice", valor_numerico=3.0, unidade="", ref_min=None, ref_max=1.0)])
+        self.assertFalse(rs[0]["grafico"])
+        self.assertEqual(rs[0]["exame_id"], "sem_titulo")
+
+    def test_indice_nao_mistura_com_quantitativo(self):
+        self.assertNotEqual(identificar("ANTI-HBS - Indice")[0], identificar("ANTI-HBS")[0])
+
+
+class DuplicatasConflitosTests(unittest.TestCase):
+    """3. (marcador, data, valor) repetido vira um ponto; valores diferentes vao para conflitos."""
+
+    def test_mesmo_valor_um_ponto_com_todos_os_arquivos(self):
+        rs, conf = A.consolidar([
+            _r(arquivo="hemo_a.pdf", exame="Plaquetas", valor_numerico=202000.0, unidade="/mm3", data="2026-04-08"),
+            _r(arquivo="hemo_b.pdf", exame="Plaquetas", valor_numerico=202000.0, unidade="/mm3", data="2026-04-08"),
+        ])
+        self.assertEqual(len(rs), 1)
+        self.assertEqual(rs[0]["arquivos"], ["hemo_a.pdf", "hemo_b.pdf"])
+        self.assertEqual(conf, [])
+
+    def test_valores_diferentes_vao_para_conflitos(self):
+        rs, conf = A.consolidar([
+            _r(arquivo="a.pdf", exame="Tempo do paciente", valor_numerico=12.5, unidade="s", data="2024-04-16"),
+            _r(arquivo="b.pdf", exame="Tempo do paciente", valor_numerico=13.1, unidade="s", data="2024-04-16"),
+        ])
+        self.assertEqual(len(conf), 1)
+        self.assertEqual(conf[0]["exame_id"], "tp_paciente")
+        self.assertEqual(sorted(v["valor"] for v in conf[0]["valores"]), [12.5, 13.1])
+        self.assertEqual(sum(r["grafico"] for r in rs), 1)
+
+    def test_ttpa_nao_se_mistura_com_tempo_de_protrombina(self):
+        texto = ("TTPA - TEMPO DE TROMBOPLASTINA PARCIAL ATIVADA\nMaterial:\nPlasma\nColeta:\n16/04/2024\n"
+                 "Tempo do paciente..:\n31,2\nsegundos\n25,0 a 35,0 segundos\n")
+        res = A.extract_results(Path("c.pdf"), texto, None)
+        self.assertEqual([r.exame_id for r in res], ["ttpa_paciente"])
+
+    def test_idempotente(self):
+        entrada = [_r(arquivo="a.pdf", valor_numerico=90.0), _r(arquivo="b.pdf", valor_numerico=91.0)]
+        rs1, c1 = A.consolidar(entrada)
+        rs2, c2 = A.consolidar(rs1)
+        self.assertEqual(c1, c2)
+        self.assertEqual([(r["valor_numerico"], r["grafico"]) for r in rs1], [(r["valor_numerico"], r["grafico"]) for r in rs2])
+
+
+class ClassificacaoPorLimitesTests(unittest.TestCase):
+    """4. classificacao sai SO de ref_min/ref_max."""
+
+    def test_regra(self):
+        self.assertEqual(A.classificar(0.5, 0.7, 1.3), "abaixo")
+        self.assertEqual(A.classificar(1.4, 0.7, 1.3), "acima")
+        self.assertEqual(A.classificar(1.3, 0.7, 1.3), "dentro")
+        self.assertEqual(A.classificar(8.0, None, 5.0), "acima")
+        self.assertEqual(A.classificar(8.0, 10.0, None), "abaixo")
+        self.assertEqual(A.classificar(8.0, None, None), "nao determinado")
+
+    def test_json_antigo_divergente_e_corrigido(self):
+        casos = [
+            _r(exame="CREATININA", valor_numerico=1.4, ref_min=0.7, ref_max=1.3, classificacao="dentro"),
+            _r(exame="PROTEINA C REATIVA", valor_numerico=0.2, ref_min=None, ref_max=0.5, classificacao="nao determinado"),
+            _r(exame="VHS", valor_numerico=25.0, ref_min=None, ref_max=15.0, classificacao="dentro"),
+            _r(exame="ANTI-HBS", valor_numerico=250.0, ref_min=10.0, ref_max=None, classificacao="abaixo"),
+            _r(exame="COLESTEROL LDL", valor_numerico=125.0, ref_min=None, ref_max=None, classificacao="acima"),
+        ]
+        rs, _ = A.consolidar(casos)
+        got = {r["exame_id"]: r["classificacao"] for r in rs}
+        self.assertEqual(got, {"creatinina": "acima", "pcr": "dentro", "vhs": "acima", "anti_hbs": "dentro", "ldl": "nao determinado"})
+
+    def test_extracao_sempre_coerente_com_os_limites(self):
+        textos = (PainelTests.TEXTO, UrinaSangueTests.SEDIMENTO, IndiceTests.TEXTO)
+        for texto in textos:
+            for r in A.extract_results(Path("x.pdf"), texto, None):
+                self.assertEqual(r.classificacao, A.classificar(r.valor_numerico, r.ref_min, r.ref_max), r.exame)
+
+    def test_meta_por_risco_sem_limites(self):
+        ldl = "VALORES DE ALVO TERAPEUTICO SUGERIDO PARA CATEGORIA DE RISCO\n| BAIXO | INFERIOR A 115 mg/dL"
+        self.assertEqual(A.limites_referencia(ldl), (None, None))
+
+
+class UnidadeTests(unittest.TestCase):
+    """5. Unidade nunca e texto do laudo."""
+
+    def test_rejeita_texto_do_laudo(self):
+        for lixo in ("Sr (a)", "Até 1,2", "Ate 1,2", ">= 39.000.000", "Notas:", "Nota", "Negativo", "Valor", "12", "a"):
+            self.assertEqual(A.unidade_valida(lixo), "", lixo)
+
+    def test_aceita_unidades_reais(self):
+        for u in ("mg/dL", "/mm3", "milhoes/mm3", "%", "fL", "pg", "U/L", "UFC/mL", "x10³/µL", "mm/h", "segundos",
+                  "µUI/mL", "mEq/L", "/campo", "ng/dL"):
+            self.assertEqual(A.unidade_valida(u), u, u)
+
+    def test_unidade_da_referencia(self):
+        self.assertEqual(A.unidade_da_referencia("Valor de referencia: 70 a 99 mg/dL"), "mg/dL")
+        self.assertEqual(A.unidade_da_referencia("Inferior a 1,00"), "")
+        self.assertEqual(A.unidade_da_referencia("Ate 1,2 mg/dL"), "mg/dL")
+
+    def test_painel_nao_pega_lixo_como_unidade(self):
+        texto = ("CREATININA\nMaterial:\nSoro\nColeta:\n10/02/2025\nCreatinina.........:\n1,10\nSr (a)\n0,70 a 1,30 mg/dL\n")
+        r = A.extract_results(Path("x.pdf"), texto, None)[0]
+        self.assertEqual((r.unidade, r.unidade_fonte), ("mg/dL", "referencia"))
+
+    def test_resultado_sem_unidade_usa_referencia(self):
+        texto = "GLICOSE\nMaterial:\nSoro\nColeta:\n11/03/2025\nResultado:\n95\nValor de Referencia:\n70 a 99 mg/dL\n"
+        r = A.extract_results(Path("x.pdf"), texto, None)[0]
+        self.assertEqual(r.unidade, "mg/dL")
+
+    def test_padrao_so_para_exibicao(self):
+        rs, _ = A.consolidar([_r(exame="GLICOSE", unidade="Notas:", referencia="")])
+        self.assertEqual((rs[0]["unidade"], rs[0]["unidade_fonte"]), ("mg/dL", "padrao"))
+        # na reexecucao a padrao nao conta como unidade real da serie
+        rs2, _ = A.consolidar(rs + [_r(arquivo="b.pdf", data="2025-02-01", unidade="mg/dL"),
+                                    _r(arquivo="c.pdf", data="2025-03-01", unidade="mg/dL")])
+        self.assertFalse(next(r for r in rs2 if r["arquivo"] == "a.pdf")["grafico"])
+
+
+class ApiSerieTests(unittest.TestCase):
+    """A API aplica as mesmas regras ao ler o resultados.json (e os envios)."""
+
+    def test_serie_sem_duplicata_nem_urina(self):
+        import importlib
+        import json as _json
+        import os
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as res:
+            dados = {"arquivos": [], "achados": [], "resultados": [
+                _r(arquivo="h1.pdf", exame="Leucocitos", valor_numerico=5000.0, unidade="/mm3", data="2024-05-01", ref_min=3700.0, ref_max=11000.0),
+                _r(arquivo="h2.pdf", exame="Leucocitos", valor_numerico=5000.0, unidade="/mm3", data="2024-05-01", ref_min=3700.0, ref_max=11000.0),
+                _r(arquivo="h3.pdf", exame="Leucocitos", valor_numerico=6000.0, unidade="/mm3", data="2024-06-01", ref_min=3700.0, ref_max=11000.0),
+                _r(arquivo="u.pdf", exame="Leucocitos", valor_numerico=100000.0, unidade="UFC/mL", data="2024-03-08"),
+                _r(arquivo="s.pdf", exame="Indice", valor_numerico=0.1, unidade=""),
+            ]}
+            (Path(res) / "resultados.json").write_text(_json.dumps(dados), encoding="utf-8")
+            os.environ["ANALISADOR_RESULT_DIR"] = res
+            import api
+            api = importlib.reload(api)
+            try:
+                pontos = api.serie("leucocitos")["pontos"]
+                self.assertEqual([(p["data"], p["valor"]) for p in pontos], [("2024-05-01", 5000.0), ("2024-06-01", 6000.0)])
+                self.assertEqual(pontos[0]["arquivos"], ["h1.pdf", "h2.pdf"])
+                self.assertEqual(api.serie("urina_leucocitos")["pontos"][0]["valor"], 100000.0)
+                self.assertNotIn("sem_titulo", {m["id"] for m in api.marcadores()})
+                self.assertEqual(api.conflitos(), [])
+            finally:
+                os.environ.pop("ANALISADOR_RESULT_DIR", None)
+                importlib.reload(api)
+
+
+@unittest.skipUnless(shutil.which("node"), "precisa do node para rodar o format.ts")
+class EixoYTests(unittest.TestCase):
+    """6. A largura do eixo Y cabe o maior rotulo ("100.000" nao vira "00.000")."""
+
+    def _largura(self, ticks):
+        import subprocess
+        js = (f"import('./frontend/src/format.ts').then(m => console.log(m.larguraEixoY({ticks}) + ' ' + "
+              f"m.fmtNum(Math.max(...{ticks}))))")
+        out = subprocess.run(["node", "--experimental-strip-types", "--no-warnings", "-e", js], cwd=Path(__file__).parent,
+                             capture_output=True, text=True, timeout=30, check=False)
+        if out.returncode != 0:
+            self.skipTest(f"node sem suporte a .ts: {out.stderr[:200]}")
+        largura, rotulo = out.stdout.split()
+        return int(largura), rotulo
+
+    def test_cresce_com_o_rotulo(self):
+        grande, rotulo = self._largura([0, 25000, 50000, 75000, 100000])
+        pequena, _ = self._largura([0, 1, 2])
+        self.assertEqual(rotulo, "100.000")
+        self.assertGreaterEqual(grande, len(rotulo) * 7 + 8)  # ~7px por caractere a 12px
+        self.assertLess(pequena, grande)

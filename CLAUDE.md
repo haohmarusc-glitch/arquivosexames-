@@ -11,7 +11,7 @@ achados de laudos de imagem (coluna, articulacoes). Uso pessoal do Jefferson.
   O sistema de cada marcador e recalculado a partir do titulo na leitura, entao
   mudar `mapa_exames.py` vale sem rodar o analisador de novo.
 - `frontend/`: React + TypeScript + Vite + Tailwind + Recharts (`npm run build` gera `frontend/dist`).
-- `test_analisador.py`: 31 testes (`.venv/bin/python -m unittest`), rode sempre antes de aplicar no VPS.
+- `test_analisador.py`: testes (`.venv/bin/python -m unittest`), rode sempre antes de aplicar no VPS.
 
 ## Deploy (producao)
 - Roda como container Docker `saude-app` na rede `premercado_default` (mesma do
@@ -96,6 +96,20 @@ Code separado com uma ferramenta de imagem que esta sessao de chat nao tem.
 - **Repositorio GitHub**: ficou publico temporariamente para eu (Claude via
   chat) conseguir clonar. Se ainda estiver publico, considere voltar para
   privado.
+
+## Regras da serie dos graficos (`consolidar()` em analisar_exames.py)
+Roda no analisador E na API (sobre o JSON + envios), e idempotente:
+- Leucocitos/hemacias de EAS/sedimento/urocultura (material do bloco ou unidade
+  /mL, /campo, UFC) viram `urina_leucocitos`/`urina_hemacias`. Ponto sem unidade
+  numa serie com unidade dominante fica fora do grafico (`grafico=false`).
+- Rotulo generico ("Indice") vira "<TITULO> - Indice" (id `<exame>_indice`);
+  sem titulo nas linhas acima, fica fora do grafico.
+- (marcador, data, valor) repetido vira um registro com `arquivos` = todos os PDFs;
+  valores diferentes na mesma data vao para `conflitos.json` (`/api/conflitos`)
+  e so um fica no grafico.
+- `classificacao` sai SO de `ref_min`/`ref_max` (faixas que discordam -> ambos None).
+- Unidade: `unidade_valida()` rejeita texto do laudo; senao a da referencia; por
+  ultimo `UNIDADE_PADRAO` (`unidade_fonte="padrao"`, so exibicao).
 
 ## Testar antes de aplicar
 ```bash

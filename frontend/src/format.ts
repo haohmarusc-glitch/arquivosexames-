@@ -16,6 +16,12 @@ export function fmtNum(v: number | null | undefined) {
   return v.toLocaleString('pt-BR', { maximumFractionDigits: casas })
 }
 
+/** Largura do eixo Y a partir do maior rótulo: com largura fixa, "100.000" virava "00.000". */
+export function larguraEixoY(ticks: number[], formatar: (v: number) => string = fmtNum, pxPorCaractere = 7.5) {
+  const maior = Math.max(1, ...ticks.map((t) => formatar(t).length))
+  return Math.ceil(maior * pxPorCaractere) + 12
+}
+
 export function fmtReferencia(min: number | null, max: number | null, unidade = '') {
   const u = unidade ? ` ${unidade}` : ''
   if (min != null && max != null) return `${fmtNum(min)} a ${fmtNum(max)}${u}`

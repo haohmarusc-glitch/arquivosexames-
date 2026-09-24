@@ -35,6 +35,7 @@ Arquivos produzidos:
 - `resultados.csv`: resultados laboratoriais encontrados.
 - `resultados.json`: dados estruturados completos.
 - `resumo.md`: linha do tempo e itens fora do intervalo informado no laudo.
+- `conflitos.json`: mesmo marcador e data com valores diferentes em laudos distintos (só um vai para o gráfico).
 
 Para analisar um ZIP sem extrair manualmente:
 

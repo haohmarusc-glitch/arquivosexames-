@@ -47,19 +47,6 @@ _cache: dict[str, Any] = {"mtime": None, "dados": None}
 _lock = Lock()
 
 
-def _enriquecer(r: dict[str, Any]) -> dict[str, Any]:
-    """Recalcula id/nome/sistema a partir do titulo extraido: assim uma mudanca
-    no mapa_exames.py (ex.: exame que saiu de "Outros") vale na hora, sem
-    precisar rodar o analisador de novo sobre todos os PDFs."""
-    if r.get("exame"):
-        r["exame_id"], r["exame_nome"], r["sistema"] = identificar(r.get("exame"))
-    elif not r.get("exame_id"):
-        r["exame_id"], r["exame_nome"], r["sistema"] = identificar(None)
-    r.setdefault("ref_min", None)
-    r.setdefault("ref_max", None)
-    return r
-
-
 def _arquivo_upload() -> Path | None:
     return UPLOAD_DIR / "resultados_upload.json" if UPLOAD_DIR else None
 
@@ -100,15 +87,22 @@ def carregar() -> dict[str, Any]:
         if _cache["mtime"] != mtime:
             bruto = json.loads(caminho.read_text(encoding="utf-8")) if caminho.exists() else {"arquivos": [], "resultados": [], "achados": [], "erros": []}
             bruto = _mesclar(bruto, _ler_upload())
-            bruto["resultados"] = [_enriquecer(r) for r in bruto.get("resultados", [])]
+            # Recalcula id (urina x sangue), unidade, classificacao, duplicatas e
+            # conflitos: uma mudanca no mapa_exames.py vale sem rodar o analisador
+            # de novo, e os envios pelo painel passam pelas mesmas regras.
+            bruto["resultados"], bruto["conflitos"] = analisar_exames.consolidar(bruto.get("resultados", []))
             _cache.update(mtime=mtime, dados=bruto, gerado_em=max(mtime))
         return _cache["dados"]
+
+
+def _no_grafico(r: dict[str, Any]) -> bool:
+    return r["exame_id"] != "nao_identificado" and r.get("valor_numerico") is not None and r.get("grafico", True)
 
 
 def _ultimos_por_marcador(resultados: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     ultimos: dict[str, dict[str, Any]] = {}
     for r in resultados:
-        if r["exame_id"] == "nao_identificado" or r.get("valor_numerico") is None:
+        if not _no_grafico(r):
             continue
         atual = ultimos.get(r["exame_id"])
         if atual is None or (r.get("data") or "") >= (atual.get("data") or ""):
@@ -177,7 +171,8 @@ def documentos() -> list[dict[str, Any]]:
     dados = carregar()
     por_arquivo: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in dados["resultados"]:
-        por_arquivo[r["arquivo"]].append(r)
+        for arq in r.get("arquivos") or [r["arquivo"]]:
+            por_arquivo[arq].append(r)
     achados_por_arquivo: dict[str, set[str]] = defaultdict(set)
     for a in dados.get("achados", []):
         achados_por_arquivo[a["arquivo"]].add(a["regiao"])
@@ -254,7 +249,7 @@ def marcadores() -> list[dict[str, Any]]:
     dados = carregar()
     contagem: dict[str, int] = defaultdict(int)
     for r in dados["resultados"]:
-        if r.get("valor_numerico") is not None:
+        if _no_grafico(r) and r.get("data"):
             contagem[r["exame_id"]] += 1
     saida = [
         {
@@ -286,15 +281,22 @@ def serie(marcador_id: str) -> dict[str, Any]:
             "referencia": r.get("referencia", ""),
             "classificacao": r["classificacao"],
             "arquivo": r["arquivo"],
+            "arquivos": r.get("arquivos") or [r["arquivo"]],
         }
         for r in dados["resultados"]
-        if r["exame_id"] == marcador_id and r.get("valor_numerico") is not None and r.get("data")
+        if r["exame_id"] == marcador_id and _no_grafico(r) and r.get("data")
     ]
     if not pontos:
         raise HTTPException(404, "Marcador sem valores numéricos datados.")
     pontos.sort(key=lambda p: p["data"])
     exemplo = next(r for r in dados["resultados"] if r["exame_id"] == marcador_id)
     return {"id": marcador_id, "nome": exemplo["exame_nome"], "sistema": exemplo["sistema"], "pontos": pontos}
+
+
+@app.get("/api/conflitos")
+def conflitos() -> list[dict[str, Any]]:
+    """Mesma data e marcador com valores diferentes: so o escolhido vai ao grafico."""
+    return carregar().get("conflitos", [])
 
 
 @app.get("/api/sistemas")
@@ -383,7 +385,7 @@ def _resumo_envio(item: dict[str, Any], resultados: list[dict[str, Any]], achado
     por_sistema: dict[str, list[str]] = defaultdict(list)
     fora = 0
     for r in resultados:
-        mid, nome, sistema = identificar(r.get("exame"))
+        mid, nome, sistema = identificar(r.get("exame"), r.get("material"), r.get("unidade"))
         if mid == "nao_identificado":
             continue
         if nome not in por_sistema[sistema]:
