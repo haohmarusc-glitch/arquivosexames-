@@ -86,6 +86,7 @@ class LabResult:
     grafico: bool = True  # False: fica na tabela, mas nao entra no grafico
     motivo: str = ""  # por que grafico=False
     arquivos: list[str] = field(default_factory=list)  # todos os PDFs com este mesmo valor
+    coleta_hora: str = ""  # "HH:MM" da coleta; desempata duas coletas no mesmo dia
 
 
 def normalize(value: str) -> str:
@@ -446,7 +447,7 @@ UNIDADE_PADRAO: dict[str, str] = {
 }
 
 
-COLETA_RE = re.compile(r"coleta\s*:?\s*\n?\s*([0-3]?\d/[01]?\d/(?:19|20)\d{2})", re.IGNORECASE)
+COLETA_RE = re.compile(r"coleta\s*:?\s*\n?\s*([0-3]?\d/[01]?\d/(?:19|20)\d{2})(?:\s*-?\s*(\d{1,2}:\d{2}))?", re.IGNORECASE)
 NUM_LINE_RE = re.compile(r"^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?$|^-?\d+(?:[.,]\d+)?$")
 LABEL_RE = re.compile(r"^(?P<label>[^\d:\s][^:]{0,70}?)[\s.]*:\s*$")
 REF_LINE_RE = re.compile(r"\d[\d.,]*\s*(?:a|ate|-)\s*\d|inferior|superior|menor|maior|nao ha valores", re.IGNORECASE)
@@ -455,6 +456,8 @@ IGNORED_LABELS = (
     "sr (a)", "idade", "dr (a)", "data", "nro", "documento", "celulas contadas", "resultado", "homens", "mulheres",
     "eritrograma", "leucograma", "local", "prescricao", "responsavel",
 )
+# "Leucocitos................p/mL:" -> nome "Leucocitos", unidade "p/mL"
+UNIT_DOTS_RE = re.compile(r"^(?P<nome>.*?\S)\s*\.{2,}\s*(?P<unit>[^\s.]\S*)$")
 UNIT_PAREN_RE = re.compile(r"^(?P<nome>.*?)\s*\((?P<unit>[^)]*(?:/|%|dl|l|fl|pg|mm3)[^)]*)\)\s*$", re.IGNORECASE)
 MATERIAL_RE = re.compile(r"^\s*material\s*:?\s*(?P<resto>.*)$", re.IGNORECASE)
 
@@ -513,6 +516,11 @@ def block_date(lines: list[str], fallback: str | None) -> str | None:
         except ValueError:
             pass
     return fallback
+
+
+def block_hora(lines: list[str]) -> str:
+    match = COLETA_RE.search("\n".join([l for l in lines if l.strip()][:12]))
+    return (match.group(2) or "").zfill(5) if match and match.group(2) else ""
 
 
 def _is_label(line: str) -> str | None:
@@ -589,6 +597,9 @@ def extract_panel(path: Path, lines: list[str], date: str | None, heading: str, 
         paren = UNIT_PAREN_RE.match(label)
         if paren:
             nome, unit = paren.group("nome").strip(" ."), unit or paren.group("unit")
+        pontos = UNIT_DOTS_RE.match(nome)
+        if pontos and unidade_valida(pontos.group("unit")):
+            nome, unit = pontos.group("nome").strip(" ."), unit or pontos.group("unit")
         nome, grafico = resolver_generico(nome, clean, i)
         unit = unidade_valida(unit)  # sem unidade valida, _make_result tenta a da referencia
         results.append(_make_result(path, date, prefix + nome, f"{raw} {unit}".strip(), parse_number(raw), unit, reference,
@@ -605,6 +616,7 @@ def extract_results(path: Path, text: str, date: str | None) -> list[LabResult]:
         lines = all_lines[start:end]
         bdate = block_date(lines, date)
         material = block_material(lines)
+        inicio = len(results)
         found = False
         for index, line in enumerate(lines):
             # Alguns laboratorios colocam "Resultado:" e o valor em linhas separadas.
@@ -627,6 +639,8 @@ def extract_results(path: Path, text: str, date: str | None) -> list[LabResult]:
         if not found:
             heading = " ".join(lines[0].split()) if lines else ""
             results.extend(extract_panel(path, lines, bdate, heading, material))
+        for r in results[inicio:]:
+            r.coleta_hora = block_hora(lines)
     return results
 
 
@@ -721,7 +735,9 @@ def consolidar(resultados: list[dict]) -> tuple[list[dict], list[dict]]:
         if len(rs) < 2:
             continue
         dom = dominante.get(mid)
-        rs.sort(key=lambda r: (r["unidade"] != dom, -len(r["arquivos"]), r["arquivos"][0] if r["arquivos"] else ""))
+        # unidade da serie; depois a coleta mais recente do dia; depois mais laudos confirmando
+        rs.sort(key=lambda r: (r["unidade"] != dom, "".join(chr(0x10FFFF - ord(c)) for c in r.get("coleta_hora") or ""),
+                               -len(r["arquivos"]), r["arquivos"][0] if r["arquivos"] else ""))
         escolhido = rs[0]
         for r in rs[1:]:
             r["grafico"], r["motivo"] = False, MOTIVO_CONFLITO
@@ -729,6 +745,7 @@ def consolidar(resultados: list[dict]) -> tuple[list[dict], list[dict]]:
             "exame_id": mid, "exame_nome": escolhido["exame_nome"], "data": data,
             "escolhido": escolhido["valor_numerico"],
             "valores": [{"valor": r["valor_numerico"], "valor_texto": r.get("valor_texto"), "unidade": r["unidade"],
+                         "coleta_hora": r.get("coleta_hora", ""),
                          "arquivos": r["arquivos"], "no_grafico": r is escolhido} for r in rs],
         })
 

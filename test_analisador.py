@@ -836,3 +836,40 @@ class EixoYTests(unittest.TestCase):
         self.assertEqual(rotulo, "100.000")
         self.assertGreaterEqual(grande, len(rotulo) * 7 + 8)  # ~7px por caractere a 12px
         self.assertLess(pequena, grande)
+
+
+class UrinaLayoutRealTests(unittest.TestCase):
+    """Layouts reais do laboratorio (PARCIAL DE URINA e BACTERIOSCOPIA - URINA)."""
+
+    PARCIAL = (
+        "PARCIAL DE URINA\n \nMaterial:\nUrina simples\nColeta:\n24/09/2025 - 09:39:52\n"
+        "Analise de Elementos Figurados\n \nLeucócitos................p/mL:\n900\nInferior a 25.000/mL\n"
+        "Hemácias..................p/mL:\n500\nInferior a 23.000/mL\n"
+        "Células Epiteliais........p/mL:\n1.200\nInferior a 31.000/mL\n"
+    )
+    GRAM = (
+        "BACTERIOSCOPIA - URINA\n \nMaterial:\nUrina simples\nColeta:\n24/09/2025 - 09:39:54\n"
+        "Leucócitos Polimorfonucleares:\n0\n \nCélulas Epiteliais...........:\n0\n"
+    )
+
+    def test_unidade_dentro_do_rotulo(self):
+        res = {r.exame_id: r for r in A.extract_results(Path("u.pdf"), self.PARCIAL, None)}
+        self.assertEqual((res["urina_leucocitos"].valor_numerico, res["urina_leucocitos"].unidade), (900.0, "p/mL"))
+        self.assertEqual(res["urina_leucocitos"].unidade_fonte, "laudo")
+        self.assertEqual(res["urina_leucocitos"].exame, "Leucócitos")
+        self.assertEqual(res["urina_hemacias"].valor_numerico, 500.0)
+        self.assertEqual(res["urina_leucocitos"].coleta_hora, "09:39")
+
+    def test_gram_nao_entra_na_serie_por_ml(self):
+        ids = {r.exame_id for r in A.extract_results(Path("u.pdf"), self.GRAM, None)}
+        self.assertIn("urina_gram_leucocitos", ids)
+        self.assertNotIn("urina_leucocitos", ids)
+        self.assertNotIn("leucocitos", ids)
+
+    def test_duas_coletas_no_dia_grafico_fica_com_a_mais_recente(self):
+        rs, conf = A.consolidar([
+            _r(arquivo="x.pdf", exame="Hemoglobina", valor_numerico=17.2, unidade="g/dL", data="2024-05-01", coleta_hora="18:53"),
+            _r(arquivo="x.pdf", exame="Hemoglobina", valor_numerico=15.5, unidade="g/dL", data="2024-05-01", coleta_hora="20:35"),
+        ])
+        self.assertEqual([r["valor_numerico"] for r in rs if r["grafico"]], [15.5])
+        self.assertEqual(conf[0]["escolhido"], 15.5)

@@ -86,6 +86,8 @@ MARCADORES: list[tuple[str, str, str, tuple[str, ...]]] = [
     ("sodio", "Sódio", "rins", (r"sodio",)),
     # Urina tipo I (EAS), sedimento e urocultura: antes de "leucocitos"/"hemacias"
     # do hemograma, senao pontos /mL ou /campo caem na serie de sangue.
+    # Bacterioscopia (Gram): contagem por campo (0 a ++++), nao por mL
+    ("urina_gram_leucocitos", "Leucócitos polimorfonucleares (Gram)", "rins", (r"polimorfonuclea",)),
     ("urina_leucocitos", "Leucócitos (urina)", "rins", (r"(?:urina|\beas\b|sediment|urocultura).*leucocitos",)),
     ("urina_hemacias", "Hemácias (urina)", "rins", (r"(?:urina|\beas\b|sediment|urocultura).*(?:hemacias|eritrocitos)",)),
     # Urina tipo I (EAS)
