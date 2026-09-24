@@ -51,13 +51,22 @@ export const PULMOES_FRENTE = {
 }
 
 // --- Vista de COSTAS -------------------------------------------------------
-// Imagem de corpo inteiro (fundo), com rins clicaveis (posicao anatomica
-// real deles). Demais orgaos aparecem "em projecao" na propria imagem, sem
-// area de clique dedicada nesta primeira versao.
+// Imagem de corpo inteiro (fundo, costas/orgaos-costas.webp, 700x1734) com os
+// orgaos visiveis clicaveis. Caixas medidas numa grade do viewBox desenhada
+// sobre a imagem: vx = 30.819 + px*0.36909, vy = 8 + py*0.36909.
+// Na vista de costas o lado DIREITO da pessoa fica a DIREITA da tela
+// (figado e rim direito a direita; baco e rim esquerdo a esquerda).
+// Nao aparecem nesta imagem: coracao, pancreas, tireoide, testiculos.
 export const ORGAOS_COSTAS: OrgaoImagem[] = [
-  // Na vista de costas a lateralidade NAO se inverte: rim direito continua a direita da tela.
+  { id: 'figado', sistema: 'figado', tambem: ['proteinas'], nome: 'Fígado', arquivo: '', proporcao: 1, caixa: { x: 168, y: 191, w: 40, h: 38 } },
+  { id: 'baco', sistema: 'sangue', nome: 'Baço', arquivo: '', proporcao: 1, caixa: { x: 113, y: 203, w: 12, h: 26 } },
   { id: 'rimD', sistema: 'rins', nome: 'Rim direito', arquivo: '', proporcao: 1, caixa: { x: 168, y: 218, w: 26, h: 38 } },
   { id: 'rimE', sistema: 'rins', nome: 'Rim esquerdo', arquivo: '', proporcao: 1, caixa: { x: 126, y: 218, w: 26, h: 38 } },
+  // Depois dos rins: ficam por cima deles e recebem o clique na sobreposicao.
+  { id: 'adrenalD', sistema: 'hormonios', nome: 'Suprarrenal direita', arquivo: '', proporcao: 1, caixa: { x: 172, y: 213, w: 14, h: 11 } },
+  { id: 'adrenalE', sistema: 'hormonios', nome: 'Suprarrenal esquerda', arquivo: '', proporcao: 1, caixa: { x: 131, y: 211, w: 14, h: 11 } },
+  { id: 'bexiga', sistema: 'rins', nome: 'Bexiga', arquivo: '', proporcao: 1, caixa: { x: 146, y: 302, w: 24, h: 20 } },
+  { id: 'prostata', sistema: 'prostata', nome: 'Próstata', arquivo: '', proporcao: 1, caixa: { x: 154, y: 321, w: 9, h: 11 } },
 ]
 
 // ---------------------------------------------------------------------------
