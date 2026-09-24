@@ -390,7 +390,7 @@ def classification(value: float | None, reference: str) -> str:
 
 # ------------------------------------------------------------------ Unidades
 
-UNIDADE_TOKEN_RE = re.compile(r"^[A-Za-zµμ%‰°/³²¹⁰-⁹0-9.^x\-]+$")
+UNIDADE_TOKEN_RE = re.compile(r"^[A-Za-zÀ-ÿµμ%‰°/³²¹⁰-⁹0-9.^x\-]+$")  # com acento: "milhões/mm3"
 UNIDADE_PALAVRAS = {
     "mg", "g", "ng", "pg", "ug", "µg", "μg", "mcg", "fl", "u", "ui", "mui", "µui", "μui", "uui", "meq", "mmol", "umol",
     "µmol", "μmol", "nmol", "pmol", "mm", "mmhg", "s", "seg", "segundos", "segundo", "min", "minutos", "ratio", "kg", "cm",
@@ -414,7 +414,7 @@ def unidade_valida(unidade: str | None) -> str:
         return ""
     if normalize(tokens[0]).strip(".") in NAO_UNIDADE:
         return ""
-    if not re.search(r"[A-Za-zµμ%‰³²]", u):
+    if not re.search(r"[A-Za-zÀ-ÿµμ%‰³²]", u):
         return ""  # so numeros
     if any(c in u for c in "/%‰^³²") or all(normalize(t).strip(".") in UNIDADE_PALAVRAS for t in tokens):
         return u
@@ -458,6 +458,7 @@ IGNORED_LABELS = (
 )
 # "Leucocitos................p/mL:" -> nome "Leucocitos", unidade "p/mL"
 UNIT_DOTS_RE = re.compile(r"^(?P<nome>.*?\S)\s*\.{2,}\s*(?P<unit>[^\s.]\S*)$")
+UNIT_SLASH_RE = re.compile(r"^.*?[^\s/]\s*(?P<unit>/\s*(?:ml|mm3|campo|µl|ul))$", re.IGNORECASE)
 UNIT_PAREN_RE = re.compile(r"^(?P<nome>.*?)\s*\((?P<unit>[^)]*(?:/|%|dl|l|fl|pg|mm3)[^)]*)\)\s*$", re.IGNORECASE)
 MATERIAL_RE = re.compile(r"^\s*material\s*:?\s*(?P<resto>.*)$", re.IGNORECASE)
 
@@ -625,6 +626,9 @@ def extract_panel(path: Path, lines: list[str], date: str | None, heading: str, 
         pontos = UNIT_DOTS_RE.match(nome)
         if pontos and unidade_valida(pontos.group("unit")):
             nome, unit = pontos.group("nome").strip(" ."), unit or pontos.group("unit")
+        barra = UNIT_SLASH_RE.match(nome)
+        if barra and not unit:
+            unit = barra.group("unit")  # "Hemacias/ml": o nome fica inteiro (o mapa usa "espermatozoides/ml")
         nome, grafico = resolver_generico(nome, clean, i)
         unit = unidade_valida(unit)  # sem unidade valida, _make_result tenta a da referencia
         results.append(_make_result(path, date, prefix + nome, f"{raw} {unit}".strip(), parse_number(raw), unit, reference,

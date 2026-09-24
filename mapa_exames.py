@@ -113,6 +113,8 @@ MARCADORES: list[tuple[str, str, str, tuple[str, ...]]] = [
     ("hbsag", "HBsAg (hepatite B)", "figado", (r"\bhbsag\b",)),
     ("anti_hcv", "Anti-HCV (hepatite C)", "figado", (r"anti[\s-]*hcv", r"anti[\s-]*hepatite\s*c\b")),
     # Espermograma
+    ("esperma_leucocitos", "Leucócitos no esperma", "testiculos", (r"(?:esperm|semen|seminal).*leucocitos",)),
+    ("esperma_hemacias", "Hemácias no esperma", "testiculos", (r"(?:esperm|semen|seminal).*(?:hemacias|eritrocitos)",)),
     ("esperma_total", "Espermatozoides no ejaculado", "testiculos", (r"espermatozoides\s+no\s+ejaculado",)),
     ("esperma_concentracao", "Espermatozoides por mL", "testiculos", (r"espermatozoides\s*/?\s*ml",)),
     ("esperma_motil_progressiva", "Motilidade progressiva", "testiculos", (r"motilidade\s+progressiva",)),
@@ -180,6 +182,8 @@ INDICE_RE = re.compile(r"^(?P<titulo>.+?)\s+-\s+(?P<rotulo>indice|index|leitura|
 URINA_MATERIAL_RE = re.compile(r"urina|\beas\b|sedimento|urocultura|jato\s+medio")
 URINA_UNIDADE_RE = re.compile(r"/\s*ml\b|/\s*campo|\bufc\b|p\s*/\s*ml|por\s+campo")
 _PARA_URINA = {"leucocitos": "urina_leucocitos", "hemacias": "urina_hemacias"}
+ESPERMA_MATERIAL_RE = re.compile(r"esperm|semen|seminal|ejaculado")
+_PARA_ESPERMA = {"leucocitos": "esperma_leucocitos", "hemacias": "esperma_hemacias"}
 
 
 def e_generico(exame: str | None) -> bool:
@@ -198,8 +202,12 @@ def identificar(exame: str | None, material: str | None = None, unidade: str | N
     urocultura) dos do hemograma, que tem o mesmo nome.
     """
     mid, nome, sistema = _identificar(exame)
-    if mid in _PARA_URINA and e_urina(material, unidade):
+    alvo = None
+    if mid in _PARA_ESPERMA and ESPERMA_MATERIAL_RE.search(_normalizar(material or "")):
+        alvo = _PARA_ESPERMA[mid]  # antes da urina: "Hemacias/ml" do espermograma tambem e "/ml"
+    elif mid in _PARA_URINA and e_urina(material, unidade):
         alvo = _PARA_URINA[mid]
+    if alvo:
         return next((m, n, s) for m, n, s, _ in _COMPILADOS if m == alvo)
     return mid, nome, sistema
 

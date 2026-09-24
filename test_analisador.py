@@ -936,3 +936,29 @@ class GrafiaUnidadeTests(unittest.TestCase):
         linhas = ["ANTICORPO ANTI-HEPATITE C", "Material: Soro", "NÃO REAGENTE", "Indice:"]
         self.assertEqual(A.titulo_acima(linhas, 3), "ANTICORPO ANTI-HEPATITE C")
         self.assertEqual(identificar("ANTICORPO ANTI-HEPATITE C - Indice")[0], "anti_hcv_indice")
+
+
+class EspermogramaTests(unittest.TestCase):
+    TEXTO = ("ESPERMOGRAMA - PÓS VASECTOMIA\nMaterial:\nEsperma\nColeta:\n08/03/2024 - 16:41\n"
+             "Leucócitos/ml.......:\n100.000\n \nHemácias/ml.........:\n100.000\n \n")
+
+    def test_celulas_do_esperma_nao_vao_para_o_sangue(self):
+        res = {r.exame_id: r for r in A.extract_results(Path("e.pdf"), self.TEXTO, None)}
+        self.assertEqual(set(res), {"esperma_leucocitos", "esperma_hemacias"})
+        self.assertEqual(res["esperma_hemacias"].unidade, "/ml")
+        self.assertEqual(res["esperma_hemacias"].sistema, "testiculos")
+
+    def test_concentracao_de_espermatozoides_continua(self):
+        self.assertEqual(identificar("Espermatozoides/mL", "Esperma", "/mL")[0], "esperma_concentracao")
+
+    def test_unidade_com_acento_da_referencia(self):
+        self.assertEqual(A.unidade_valida("milhões/mm3"), "milhões/mm3")
+        self.assertEqual(A.unidade_da_referencia("4,32 a 5,66 milhões/mm3"), "milhões/mm3")
+        rs, _ = A.consolidar([
+            _r(arquivo="h1.pdf", data="2025-01-01", exame="Hemácias", valor_numerico=5.4, unidade="", referencia="4,32 a 5,66 milhões/mm3"),
+            _r(arquivo="h2.pdf", data="2025-02-01", exame="Hemácias", valor_numerico=5.1, unidade="milhoes/mm3"),
+            _r(arquivo="e.pdf", data="2024-03-08", exame="Hemácias/ml", valor_numerico=100000.0, unidade="", material="ESPERMOGRAMA / Esperma"),
+        ])
+        hem = [r for r in rs if r["exame_id"] == "hemacias"]
+        self.assertEqual([r["unidade_fonte"] for r in hem], ["referencia", "laudo"])
+        self.assertEqual({r["exame_id"] for r in rs} - {"hemacias"}, {"esperma_hemacias"})
