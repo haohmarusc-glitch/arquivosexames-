@@ -40,12 +40,11 @@ export function VisaoGeral({ resumo }: { resumo: Estado<Resumo> }) {
       </div>
 
       <div className="-mt-16 space-y-6 px-4 pb-12 lg:px-10">
-        {r && (r.duplicados > 0 || r.nome_divergente > 0) && (
+        {r && r.nome_divergente > 0 && (
           <div className="relative rounded-2xl border border-alto/40 bg-alto-soft px-5 py-4 text-sm text-alto">
             <p className="font-semibold">Confira o download dos laudos</p>
-            {r.duplicados > 0 && <p className="mt-1">{r.duplicados === 1 ? '1 PDF tem conteúdo idêntico a outro arquivo e foi ignorado.' : `${r.duplicados} PDFs têm conteúdo idêntico a outro arquivo e foram ignorados.`}</p>}
             {r.nome_divergente > 0 && <p className="mt-1">{r.nome_divergente === 1 ? '1 PDF tem nome de exame de imagem, mas o conteúdo é de laboratório.' : `${r.nome_divergente} PDFs têm nome de exame de imagem, mas o conteúdo é de laboratório.`}</p>}
-            <p className="mt-1">O histórico pode estar incompleto. Baixe os laudos de novo no portal e rode a análise.</p>
+            <p className="mt-1">Confira esses laudos no portal e, se preciso, baixe de novo e rode a análise.</p>
           </div>
         )}
         {!r ? (
