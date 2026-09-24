@@ -27,6 +27,7 @@ SISTEMAS: dict[str, str] = {
     "prostata": "Próstata",
     "testiculos": "Testículos e espermograma",
     "proteinas": "Proteínas",
+    "sorologias": "Sorologias e infecções",
     "outros": "Outros",
 }
 
@@ -110,8 +111,26 @@ MARCADORES: list[tuple[str, str, str, tuple[str, ...]]] = [
     ("tp_razao", "Coagulação: razão paciente/normal", "figado", (r"razao\s+paciente",)),
     ("tp_atividade", "Atividade de protrombina", "figado", (r"atividade\s+(?:de\s+)?protrombina",)),
     ("anti_hbs", "Anti-HBs (imunidade hepatite B)", "figado", (r"anti[\s-]*hbs",)),
+    ("anti_hbc_igm", "Anti-HBc IgM (hepatite B recente)", "figado", (r"anti[\s-]*hbc.*igm",)),
+    ("anti_hbc", "Anti-HBc total (contato com hepatite B)", "figado", (r"anti[\s-]*hbc",)),
+    ("anti_hav_igm", "Anti-HAV IgM (hepatite A recente)", "figado", (r"(?:anti[\s-]*hav|hepatite\s+a\b).*igm",)),
+    ("anti_hav", "Anti-HAV (hepatite A)", "figado", (r"anti[\s-]*hav", r"hepatite\s+a\b")),
     ("hbsag", "HBsAg (hepatite B)", "figado", (r"\bhbsag\b",)),
     ("anti_hcv", "Anti-HCV (hepatite C)", "figado", (r"anti[\s-]*hcv", r"anti[\s-]*hepatite\s*c\b")),
+    # Sorologias (IgM = infeccao recente, IgG = contato/imunidade: series separadas)
+    ("sifilis", "Sífilis (VDRL / treponêmico)", "sorologias", (r"sifilis", r"\bvdrl\b", r"treponem")),
+    ("hiv", "HIV", "sorologias", (r"\bhiv\b",)),
+    ("toxoplasmose_igm", "Toxoplasmose IgM", "sorologias", (r"toxoplasm.*igm",)),
+    ("toxoplasmose_igg", "Toxoplasmose IgG", "sorologias", (r"toxoplasm",)),
+    ("rubeola_igm", "Rubéola IgM", "sorologias", (r"rubeola.*igm",)),
+    ("rubeola_igg", "Rubéola IgG", "sorologias", (r"rubeola",)),
+    ("cmv_igm", "Citomegalovírus IgM", "sorologias", (r"(?:citomegalovirus|\bcmv\b).*igm",)),
+    ("cmv_igg", "Citomegalovírus IgG", "sorologias", (r"citomegalovirus", r"\bcmv\b")),
+    # Cariotipo: contagens tecnicas do exame (quantas metafases o laboratorio
+    # analisou), nao sao marcadores do corpo. Ficam na tabela, fora do grafico.
+    ("cariotipo_metafases_cariotipadas", "Cariótipo: metáfases cariotipadas", "outros", (r"metafases\s+cariotipadas",)),
+    ("cariotipo_metafases_contadas", "Cariótipo: metáfases contadas", "outros", (r"metafases\s+contadas",)),
+    ("cariotipo_metafases_avaliadas", "Cariótipo: metáfases avaliadas", "outros", (r"metafases\s+avaliadas",)),
     # Espermograma
     ("esperma_leucocitos", "Leucócitos no esperma", "testiculos", (r"(?:esperm|semen|seminal).*leucocitos",)),
     ("esperma_hemacias", "Hemácias no esperma", "testiculos", (r"(?:esperm|semen|seminal).*(?:hemacias|eritrocitos)",)),
@@ -184,6 +203,10 @@ URINA_UNIDADE_RE = re.compile(r"/\s*ml\b|/\s*campo|\bufc\b|p\s*/\s*ml|por\s+camp
 _PARA_URINA = {"leucocitos": "urina_leucocitos", "hemacias": "urina_hemacias"}
 ESPERMA_MATERIAL_RE = re.compile(r"esperm|semen|seminal|ejaculado")
 _PARA_ESPERMA = {"leucocitos": "esperma_leucocitos", "hemacias": "esperma_hemacias"}
+
+
+# Ids que sao contagens tecnicas do exame, nao valores do paciente: nao vao ao grafico.
+NAO_MARCADORES = {"cariotipo_metafases_cariotipadas", "cariotipo_metafases_contadas", "cariotipo_metafases_avaliadas"}
 
 
 def e_generico(exame: str | None) -> bool:

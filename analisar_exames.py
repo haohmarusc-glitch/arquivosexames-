@@ -27,7 +27,7 @@ from typing import Iterable
 from pypdf import PdfReader
 
 from achados import Achado, extrair_achados
-from mapa_exames import e_generico, identificar
+from mapa_exames import NAO_MARCADORES, e_generico, identificar
 
 
 DATE_RE = re.compile(r"\b([0-3]?\d/[01]?\d/(?:19|20)\d{2})\b")
@@ -679,6 +679,7 @@ def extract_results(path: Path, text: str, date: str | None) -> list[LabResult]:
 MOTIVO_SEM_UNIDADE = "sem unidade numa serie em "
 MOTIVO_CONFLITO = "outro valor na mesma data"
 MOTIVO_SEM_TITULO = "rotulo generico sem titulo do exame"
+MOTIVO_TECNICO = "contagem tecnica do exame, nao e marcador"
 
 
 def chave_unidade(u: str | None) -> str:
@@ -731,6 +732,8 @@ def consolidar(resultados: list[dict]) -> tuple[list[dict], list[dict]]:
             r["exame_id"], r["exame_nome"], r["sistema"] = identificar(None)
         if r["exame_id"] == "sem_titulo" and r["grafico"]:
             r["grafico"], r["motivo"] = False, MOTIVO_SEM_TITULO
+        if r["exame_id"] in NAO_MARCADORES and r["grafico"]:
+            r["grafico"], r["motivo"] = False, MOTIVO_TECNICO
         r.setdefault("ref_min", None)
         r.setdefault("ref_max", None)
         r["classificacao"] = classificar(r.get("valor_numerico"), r["ref_min"], r["ref_max"])
