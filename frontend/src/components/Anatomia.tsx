@@ -17,8 +17,11 @@ const escalaCamadas = (topo: number, base: number, topoAlvo: number, baseAlvo: n
   return `translate(${(160 * (1 - s)).toFixed(2)} ${(topoAlvo - topo * s).toFixed(2)}) scale(${s.toFixed(4)})`
 }
 const AJUSTE_CAMADAS_FRENTE = escalaCamadas(13.2, 591.2, 80, 572.7)
-// Vista de costas em camadas: orgaos que ficam atras dos pulmoes (desenhados antes deles).
-const ATRAS_DOS_PULMOES = ['coracao']
+// Vista de costas em camadas: orgaos que ficam na FRENTE da coluna (tireoide,
+// coracao, pancreas). Visto de costas, coluna, costelas e pulmoes ficam no meio
+// do caminho: a imagem deles e desenhada antes do esqueleto; a area de clique
+// e o contorno de selecao continuam por cima.
+const ANTERIORES_COSTAS = ['tireoide', 'coracao', 'pancreas']
 const AJUSTE_CAMADAS_COSTAS = escalaCamadas(13.1, 630.4, 80, 567.2)
 const ALERTA = '#b8661f'
 const SELECAO = '#1d5b5a'
@@ -141,6 +144,8 @@ function OrganCostasCamadas({ o, ativo, alerta, esmaecido, onSelecionar, semImag
   return (
     <g opacity={esmaecido ? 0.45 : 1} className="transition-opacity">
       {!semImagem && <image href={`/anatomia/${o.arquivo}`} x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: 'none' }} className={imgClasse} />}
+      {/* Orgao escondido atras da coluna (semImagem): selecionado, aparece em transparencia. */}
+      {semImagem && ativo && <image href={`/anatomia/${o.arquivo}`} x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" opacity={0.6} style={{ pointerEvents: 'none' }} className={imgClasse} />}
       <ellipse
         cx={cx} cy={cy} rx={o.caixa.w / 2} ry={o.caixa.h / 2}
         fill="transparent"
@@ -208,6 +213,11 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
         <DefsEAnimacoes />
         <g transform={AJUSTE_CAMADAS_COSTAS}>
         <defs><clipPath id="clipCorpoCostas"><path d={CORPO} /></clipPath></defs>
+        {ORGAOS_COSTAS_CAMADAS.filter((o) => ANTERIORES_COSTAS.includes(o.id)).map((o) => (
+          <g key={o.id} opacity={esmaecer(o) ? 0.45 : 1} className="transition-opacity">
+            <image href={`/anatomia/${o.arquivo}`} x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: 'none' }} className={o.id === 'coracao' ? 'ms-coracao' : undefined} />
+          </g>
+        ))}
         <image href="/anatomia/costas/esqueleto-costas.webp" x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" />
         <image
           href="/anatomia/costas/musculatura-costas.webp"
@@ -218,13 +228,6 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
         />
         <image href="/anatomia/costas/sistema-arterial-costas.webp" x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" opacity={0.55} clipPath="url(#clipCorpoCostas)" />
         <image href="/anatomia/costas/sistema-venoso-costas.webp" x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" opacity={0.6} clipPath="url(#clipCorpoCostas)" />
-        {/* De costas o coracao fica ATRAS dos pulmoes: a imagem vem antes deles
-            (os pulmoes a cobrem); a area de clique continua por cima, abaixo. */}
-        {ORGAOS_COSTAS_CAMADAS.filter((o) => ATRAS_DOS_PULMOES.includes(o.id)).map((o) => (
-          <g key={o.id} opacity={esmaecer(o) ? 0.45 : 1} className="transition-opacity">
-            <image href={`/anatomia/${o.arquivo}`} x={40} y={8} width={240} height={640} preserveAspectRatio="xMidYMid slice" style={{ pointerEvents: 'none' }} className={o.id === 'coracao' ? 'ms-coracao' : undefined} />
-          </g>
-        ))}
         {DECORATIVOS_COSTAS_CAMADAS.map((d) => (
           <image
             key={d.id} href={`/anatomia/${d.arquivo}`} x={40} y={8} width={240} height={640}
@@ -235,7 +238,7 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
         {ORGAOS_COSTAS_CAMADAS.map((o) => (
           <OrganCostasCamadas
             key={o.id}
-            semImagem={ATRAS_DOS_PULMOES.includes(o.id)}
+            semImagem={ANTERIORES_COSTAS.includes(o.id)}
             o={o}
             ativo={destaca(o)}
             alerta={comAlerta.has(o.sistema)}
