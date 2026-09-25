@@ -346,13 +346,17 @@ export function FiguraOrgaos({ selecionado, comAlerta, onSelecionar, orientacao 
 
 /* ------------------------------------------------------ Coluna e articulações */
 
+// Calibrado em 2026-09 numa grade do viewBox sobre coluna-frente.webp e
+// coluna-costas.webp (as duas vistas ficam a no maximo ~3 unidades uma da outra):
+// C1 ~72 (abaixo da mandibula/occipital), C7-T1 ~111 (base do pescoco),
+// T12-L1 ~211 (12a costela), L5-S1 ~262 (topo do sacro), sacro 262..312.
 const SEGMENTOS: { regiao: 'cervical' | 'toracica' | 'lombar'; letra: string; qtd: number; topo: number; altura: number; largura: [number, number] }[] = [
-  { regiao: 'cervical', letra: 'C', qtd: 7, topo: 71, altura: 3.64, largura: [11, 14] },
-  { regiao: 'toracica', letra: 'T', qtd: 12, topo: 107, altura: 6.08, largura: [15, 20] },
-  { regiao: 'lombar', letra: 'L', qtd: 5, topo: 198, altura: 8.3, largura: [22, 28] },
+  { regiao: 'cervical', letra: 'C', qtd: 7, topo: 72, altura: 4.07, largura: [11, 14] },
+  { regiao: 'toracica', letra: 'T', qtd: 12, topo: 111, altura: 6.83, largura: [15, 20] },
+  { regiao: 'lombar', letra: 'L', qtd: 5, topo: 211, altura: 8.7, largura: [22, 28] },
 ]
 const GAP = 1.5
-const TOPO_SACRO = 247
+const TOPO_SACRO = 262
 
 export const VERTEBRAS = SEGMENTOS.flatMap((s) =>
   Array.from({ length: s.qtd }, (_, i) => {
@@ -369,30 +373,28 @@ export function yDoNivel(nivel: string): number | null {
   return nivel.includes('-') ? v.y + v.h + GAP / 2 : v.y + v.h / 2
 }
 
-// Posicoes calibradas contra coluna/frente.webp (pontos reais: ombro py~345,
-// cotovelo py~650, punho py~910, quadril py~890, joelho py~1301, tornozelo
-// py~1712, convertidos via vy = 8 + (py-16)*0.3254). cx e' o lado da pessoa
-// na vista de FRENTE (direito = baixo, como na convencao do app); para a
-// vista de costas, a lateralidade se inverte (ver espelharX em FiguraColuna).
-export const ARTICULACOES: { regiao: string; lado: 'direito' | 'esquerdo'; cx: number; cy: number; r: number }[] = [
-  { regiao: 'ombro', lado: 'direito', cx: 86, cy: 115, r: 11 },
-  { regiao: 'ombro', lado: 'esquerdo', cx: 233, cy: 115, r: 11 },
-  { regiao: 'cotovelo', lado: 'direito', cx: 80, cy: 214, r: 8 },
-  { regiao: 'cotovelo', lado: 'esquerdo', cx: 239, cy: 214, r: 8 },
-  { regiao: 'punho_mao', lado: 'direito', cx: 60, cy: 299, r: 8 },
-  { regiao: 'punho_mao', lado: 'esquerdo', cx: 259, cy: 299, r: 8 },
-  { regiao: 'quadril', lado: 'direito', cx: 119, cy: 292, r: 11 },
-  { regiao: 'quadril', lado: 'esquerdo', cx: 200, cy: 292, r: 11 },
-  { regiao: 'joelho', lado: 'direito', cx: 129, cy: 426, r: 10 },
-  { regiao: 'joelho', lado: 'esquerdo', cx: 190, cy: 426, r: 10 },
-  { regiao: 'tornozelo_pe', lado: 'direito', cx: 122, cy: 560, r: 8 },
-  { regiao: 'tornozelo_pe', lado: 'esquerdo', cx: 197, cy: 560, r: 8 },
+// Posicoes calibradas em 2026-09 numa grade do viewBox (vx = 30.97 + px*0.36866,
+// vy = 8 + py*0.36866) sobre coluna-frente.webp (cx, cy) e coluna-costas.webp
+// (costas). A imagem de costas tem outra proporcao (corpo mais baixo), entao
+// tem coordenadas proprias em vez de so espelhar a frente.
+// cx: lado da pessoa na vista de FRENTE (direito = esquerda da tela);
+// costas.cx ja e a posicao na tela de costas (direito = direita da tela).
+export const ARTICULACOES: { regiao: string; lado: 'direito' | 'esquerdo'; cx: number; cy: number; r: number; costas: { cx: number; cy: number } }[] = [
+  { regiao: 'ombro', lado: 'direito', cx: 102, cy: 123, r: 11, costas: { cx: 226, cy: 126 } },
+  { regiao: 'ombro', lado: 'esquerdo', cx: 217, cy: 123, r: 11, costas: { cx: 91, cy: 126 } },
+  { regiao: 'cotovelo', lado: 'direito', cx: 80, cy: 214, r: 8, costas: { cx: 244, cy: 230 } },
+  { regiao: 'cotovelo', lado: 'esquerdo', cx: 239, cy: 214, r: 8, costas: { cx: 75, cy: 230 } },
+  { regiao: 'punho_mao', lado: 'direito', cx: 60, cy: 299, r: 8, costas: { cx: 261, cy: 318 } },
+  { regiao: 'punho_mao', lado: 'esquerdo', cx: 259, cy: 299, r: 8, costas: { cx: 59, cy: 318 } },
+  { regiao: 'quadril', lado: 'direito', cx: 119, cy: 292, r: 11, costas: { cx: 204, cy: 314 } },
+  { regiao: 'quadril', lado: 'esquerdo', cx: 200, cy: 292, r: 11, costas: { cx: 117, cy: 314 } },
+  { regiao: 'joelho', lado: 'direito', cx: 129, cy: 438, r: 10, costas: { cx: 190, cy: 454 } },
+  { regiao: 'joelho', lado: 'esquerdo', cx: 190, cy: 438, r: 10, costas: { cx: 130, cy: 454 } },
+  { regiao: 'tornozelo_pe', lado: 'direito', cx: 133, cy: 568, r: 8, costas: { cx: 185, cy: 596 } },
+  { regiao: 'tornozelo_pe', lado: 'esquerdo', cx: 187, cy: 568, r: 8, costas: { cx: 136, cy: 596 } },
 ]
 
 
-/** Espelha um cx horizontalmente em torno do centro do viewBox (160) — usado
- * so na vista de costas, onde a lateralidade da pessoa se inverte na tela. */
-const espelharX = (cx: number) => 320 - cx
 
 export interface Marca {
   regiao: string
@@ -487,8 +489,8 @@ export function FiguraColuna({ selecionado, marcas, onSelecionar, orientacao = '
         return (
           <circle
             key={`${a.regiao}-${a.lado}`}
-            cx={orientacao === 'costas' ? espelharX(a.cx) : a.cx}
-            cy={a.cy}
+            cx={orientacao === 'costas' ? a.costas.cx : a.cx}
+            cy={orientacao === 'costas' ? a.costas.cy : a.cy}
             r={a.r}
             fill={ativo ? '#8cc3bf' : comAchado ? '#f3d9bf' : '#f7f4ee'}
             fillOpacity={ativo || comAchado ? 0.7 : 0.4}
