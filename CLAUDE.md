@@ -140,6 +140,10 @@ Roda no analisador E na API (sobre o JSON + envios), e idempotente:
 - O achado traz niveis e termos separados; `patologiasDoTrecho` le o trecho do
   laudo frase por frase e so marca quando termo e nivel estao na MESMA frase
   (lado: esquerdo/direito/bilateral/central; negacao "sem hernias" ignorada).
+  ESTADO ATUAL: em cada regiao da coluna (e cada articulacao/lado) so o laudo
+  MAIS RECENTE vale para o desenho (`maisRecentesPorRegiao`); uma patologia que
+  melhorou ou sumiu no exame novo nao fica desenhada. O historico continua na
+  lista de laudos ao lado.
   Artrodese: faixa de vertebras ("L4-S1", "L4 a S1", "parafusos em L4, L5 e S1")
   -> todos os discos da faixa. Fratura: a vertebra ("T12").
 - Figura da coluna (Anatomia.tsx `GlifosColuna`): de FRENTE o lado esquerdo da

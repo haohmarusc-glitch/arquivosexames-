@@ -218,16 +218,44 @@ export interface MarcaPatologia extends Patologia {
   historico: boolean
 }
 
-/** Patologias de varios laudos: mesma (nivel, tipo, lado) fica so a mais
- * recente; "degenerativo" so aparece onde nao ha outra patologia no nivel. */
-export function marcasDosAchados(achados: { data?: string | null; trecho?: string; niveis_historicos?: string[] }[]): MarcaPatologia[] {
-  const porChave = new Map<string, MarcaPatologia>()
-  for (const a of [...achados].sort((x, y) => (x.data ?? '').localeCompare(y.data ?? ''))) {
-    for (const p of patologiasDoTrecho(a.trecho ?? '')) {
-      porChave.set(`${p.nivel}|${p.tipo}|${p.lado}`, { ...p, data: a.data ?? null, historico: (a.niveis_historicos ?? []).includes(p.nivel) })
+/** Regiao de um nivel pela letra, como regiao_de_nivel (achados.py):
+ * C7-T1 -> cervical, T12-L1 -> toracica, L5-S1 -> lombar, T12 -> toracica. */
+export const regiaoDoNivel = (nivel: string) => ({ C: 'cervical', T: 'toracica', L: 'lombar', S: 'sacral' } as Record<string, string>)[nivel[0]] ?? ''
+
+interface AchadoTexto { regiao?: string; data?: string | null; trecho?: string; niveis?: string[]; niveis_historicos?: string[] }
+
+/** Para cada regiao da coluna, SO o laudo mais recente que fala dela (pela
+ * regiao do achado ou por um nivel citado no texto). Uma patologia que
+ * melhorou ou sumiu no exame novo nao fica desenhada por causa de um antigo. */
+export function maisRecentesPorRegiao<T extends AchadoTexto>(achados: T[]): Map<string, T[]> {
+  const porRegiao = new Map<string, T[]>()
+  for (const a of achados) {
+    const regioes = new Set([a.regiao ?? '', ...(a.niveis ?? []).map(regiaoDoNivel), ...patologiasDoTrecho(a.trecho ?? '').map((p) => regiaoDoNivel(p.nivel))])
+    regioes.delete('')
+    for (const r of regioes) {
+      const atuais = porRegiao.get(r)
+      const dAtual = atuais?.[0]?.data ?? ''
+      const d = a.data ?? ''
+      if (!atuais || d > dAtual) porRegiao.set(r, [a])
+      else if (d === dAtual) atuais.push(a)
     }
   }
-  const marcas = [...porChave.values()]
+  return porRegiao
+}
+
+/** Patologias do estado ATUAL: em cada regiao, so as do laudo mais recente
+ * dela; "degenerativo" so aparece onde nao ha outra patologia no nivel. */
+export function marcasDosAchados(achados: AchadoTexto[]): MarcaPatologia[] {
+  const marcas: MarcaPatologia[] = []
+  for (const [regiao, doExame] of maisRecentesPorRegiao(achados)) {
+    for (const a of doExame) {
+      for (const p of patologiasDoTrecho(a.trecho ?? '')) {
+        if (regiaoDoNivel(p.nivel) !== regiao) continue
+        if (marcas.some((m) => m.nivel === p.nivel && m.tipo === p.tipo && m.lado === p.lado)) continue
+        marcas.push({ ...p, data: a.data ?? null, historico: (a.niveis_historicos ?? []).includes(p.nivel) })
+      }
+    }
+  }
   return marcas.filter((m) => m.tipo !== 'degenerativo' || !marcas.some((o) => o.nivel === m.nivel && o.tipo !== 'degenerativo'))
 }
 

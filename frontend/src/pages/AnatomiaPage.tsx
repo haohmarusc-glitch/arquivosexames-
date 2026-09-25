@@ -373,7 +373,7 @@ function DetalheComPatologias({ regiao, achados }: { regiao: string; achados: Ac
               </span>
             ))}
           </div>
-          <p>Ilustrativo: nível e lado tirados do texto do laudo; posição aproximada, vista de costas (esquerda da pessoa à esquerda).</p>
+          <p>Ilustrativo: mostra só o laudo mais recente desta região (o que melhorou não aparece); nível e lado tirados do texto; posição aproximada, vista de costas (esquerda da pessoa à esquerda).</p>
         </figcaption>
       )}
     </figure>

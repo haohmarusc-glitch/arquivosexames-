@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from 'react'
-import { ABREV_LADO, COR_PATOLOGIA, CURTO_PATOLOGIA, GRAVIDADE, faixasArtrodese, marcasDosAchados, vertebrasDaFaixa, type MarcaPatologia } from '../patologias'
+import { ABREV_LADO, COR_PATOLOGIA, CURTO_PATOLOGIA, GRAVIDADE, faixasArtrodese, maisRecentesPorRegiao, marcasDosAchados, regiaoDoNivel, vertebrasDaFaixa, type MarcaPatologia } from '../patologias'
 import {
   AORTA_CAMADAS, CORPO, DECORATIVOS_COSTAS_CAMADAS, DECORATIVOS_FRENTE_CAMADAS, ORGAOS_COSTAS,
   ORGAOS_COSTAS_CAMADAS, ORGAOS_FRENTE, ORGAOS_FRENTE_CAMADAS, PULMOES_FRENTE,
@@ -419,8 +419,12 @@ const NOME_SEGMENTO: Record<string, string> = { cervical: 'Coluna cervical', tor
 
 export function FiguraColuna({ selecionado, marcas, onSelecionar, orientacao = 'frente' }: PropsColuna) {
   const regioesComAchado = new Set(marcas.map((m) => m.regiao))
-  const niveis = marcas.flatMap((m) => m.niveis.map((n) => ({ n, origem: m.origem, historico: (m.niveis_historicos ?? []).includes(n) })))
-  const patologias = marcasDosAchados(marcas.filter((m) => REGIOES_COLUNA.includes(m.regiao)))
+  // Estado atual: em cada regiao da coluna, so o laudo mais recente dela.
+  const daColuna = marcas.filter((m) => REGIOES_COLUNA.includes(m.regiao))
+  const niveis = [...maisRecentesPorRegiao(daColuna)].flatMap(([regiao, doExame]) =>
+    doExame.flatMap((m) => m.niveis.filter((n) => regiaoDoNivel(n) === regiao).map((n) => ({ n, origem: m.origem, historico: (m.niveis_historicos ?? []).includes(n) }))),
+  )
+  const patologias = marcasDosAchados(daColuna)
   const faixas = faixasArtrodese(patologias)
   const rotulos = rotulosDaColuna(niveis, patologias, faixas)
   const ladosComAchado = (regiao: string) => {
@@ -540,11 +544,14 @@ const TERMO_CURTO: Record<string, string> = {
   estenose: 'estenose', cisto: 'cisto', radicular: 'raiz', hernia: 'hérnia', protrusao: 'protrusão',
 }
 
-/** Termos dos achados de uma articulacao, do lado dela ("bilateral"/sem lado vale para os dois). */
+/** Termos do laudo MAIS RECENTE de uma articulacao, do lado dela
+ * ("bilateral"/sem lado vale para os dois): o que melhorou nao fica escrito. */
 function termosDaArticulacao(marcas: Marca[], regiao: string, lado: string): string[] {
+  const doLado = marcas.filter((m) => m.regiao === regiao && (!m.lado || m.lado === 'bilateral' || m.lado === lado))
+  const ultima = doLado.reduce((d, m) => ((m.data ?? '') > d ? (m.data ?? '') : d), '')
   const out: string[] = []
-  for (const m of marcas) {
-    if (m.regiao !== regiao || (m.lado && m.lado !== 'bilateral' && m.lado !== lado)) continue
+  for (const m of doLado) {
+    if ((m.data ?? '') !== ultima) continue
     for (const t of m.termos ?? []) if (!out.includes(t)) out.push(t)
   }
   return out.slice(0, 2)
