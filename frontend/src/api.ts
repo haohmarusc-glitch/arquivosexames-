@@ -199,6 +199,11 @@ export const REGIOES: Record<string, string> = {
   quadril: 'Quadril',
   joelho: 'Joelho',
   tornozelo_pe: 'Tornozelo e pé',
+  membros_inferiores: 'Membros inferiores (veias)',
+  renal: 'Rins',
+  escrotal: 'Bolsa escrotal',
+  prostata: 'Próstata',
+  parede_abdominal: 'Parede abdominal',
   outros: 'Outras regiões',
 }
 
@@ -213,6 +218,12 @@ export const TERMOS: Record<string, string> = {
   fratura: 'Fratura',
   lesao: 'Lesão/tendinopatia',
   inflamatorio: 'Sinais inflamatórios',
+  calculo: 'Cálculo',
+  esteatose: 'Esteatose',
+  varicocele: 'Varicocele',
+  cisto: 'Cisto',
+  insuficiencia_venosa: 'Insuficiência venosa',
+  trombose: 'Trombose',
 }
 
 export const MODALIDADES: Record<string, string> = {

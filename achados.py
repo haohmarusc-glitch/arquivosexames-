@@ -45,6 +45,7 @@ REGIOES: list[tuple[str, tuple[str, ...]]] = [
     ("quadril", ("quadril", "coxofemoral", "acetab")),
     ("joelho", ("joelho", "menisco", "patela", "ligamento cruzado")),
     ("tornozelo_pe", ("tornozelo", "pe ", "pes ", "calcane", "tarso")),
+    ("membros_inferiores", ("safena", "membro inferior", "membros inferiores", "trombose venosa profunda", "varizes")),
     ("renal", ("\\brim\\b", "rins", "renal", "nefro", "pielocalicinal")),
     ("escrotal", ("escroto", "testicul", "epididim", "bolsa escrotal", "pampiniforme", "cordao espermatico")),
     ("prostata", ("prostat",)),
@@ -66,6 +67,8 @@ TERMOS: list[tuple[str, tuple[str, ...]]] = [
     ("esteatose", ("esteatose",)),
     ("varicocele", ("varicocele",)),
     ("cisto", ("cisto", "cistico")),
+    ("insuficiencia_venosa", ("insuficiencia da veia", "insuficiencia venosa", "insuficiencia da safena", "veias colaterais insuficientes")),
+    ("trombose", ("trombose", "trombo ")),
 ]
 
 MODALIDADES = [
@@ -174,8 +177,35 @@ def _lado(texto: str) -> str:
     return "direito" if d else "esquerdo" if e else ""
 
 
+# Titulo de lado sozinho na linha, em maiusculas ("INFERIOR DIREITO", "OMBRO ESQUERDO"):
+# laudos bilaterais (ex.: Doppler das duas pernas) trazem uma conclusao por lado.
+TITULO_LADO_RE = re.compile(r"^[ \t]*[A-ZÀ-Ý][A-ZÀ-Ý \t/-]*\b(DIREIT[OA]|ESQUERD[OA])[ \t]*:?[ \t]*$", re.MULTILINE)
+
+
+def secoes_por_lado(texto: str) -> list[tuple[str, str]]:
+    """[(lado, texto da secao)] quando o laudo tem uma conclusao por lado; senao []."""
+    titulos = list(TITULO_LADO_RE.finditer(texto))
+    secoes: dict[str, str] = {}
+    for i, m in enumerate(titulos):
+        fim = titulos[i + 1].start() if i + 1 < len(titulos) else len(texto)
+        lado = "direito" if m.group(1).startswith("DIREIT") else "esquerdo"
+        corpo = texto[m.start():fim]
+        # O PDF pode repetir o laudo (uma copia por assinatura): fica a primeira secao com conclusao.
+        if lado not in secoes and SECAO_RE.search(corpo):
+            secoes[lado] = corpo
+    return list(secoes.items()) if len(secoes) == 2 else []
+
+
 def extrair_achados(arquivo: str, data: str | None, texto: str) -> list[Achado]:
-    cabecalho = _norm(arquivo.replace("_", " ") + " " + texto[:1500]) + " "
+    secoes = secoes_por_lado(texto)
+    if secoes:
+        cabecalho = texto[:1500]
+        return [a for lado, corpo in secoes for a in _extrair(arquivo, data, corpo, cabecalho, lado)]
+    return _extrair(arquivo, data, texto, texto[:1500], "")
+
+
+def _extrair(arquivo: str, data: str | None, texto: str, inicio: str, lado_secao: str) -> list[Achado]:
+    cabecalho = _norm(arquivo.replace("_", " ") + " " + inicio) + " "
     trecho = conclusao(texto)
     alvo = _norm(trecho) + " "
     texto_norm = _norm(texto)
@@ -195,7 +225,7 @@ def extrair_achados(arquivo: str, data: str | None, texto: str) -> list[Achado]:
     if not regioes:
         regioes = ["outros"]
     termos = _detectar(TERMOS, alvo, negavel=True)
-    lado = _lado(alvo) or _lado(cabecalho)
+    lado = lado_secao or _lado(alvo) or _lado(cabecalho)
     return [
         Achado(
             arquivo=arquivo,

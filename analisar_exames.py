@@ -142,6 +142,11 @@ LABELED_DATE_RE = re.compile(
     re.IGNORECASE,
 )
 BIRTH_DATE_RE = re.compile(r"(?:d\.?\s*n\.?|data\s+de\s+nascimento)\s*:?\s*[0-3]?\d/[01]?\d/(?:19|20)\d{2}", re.IGNORECASE)
+# Laudos de imagem que so trazem a data de liberacao ("LIBERADO EM: 19/12/2025 09:58").
+RELEASE_DATE_RE = re.compile(r"(?:liberado\s+em|laudo\s+liberado\s+em)\s*:?\s*([0-3]?\d/[01]?\d/(?:19|20)\d{2})", re.IGNORECASE)
+# Rotulo de nascimento separado da data por outras linhas do cabecalho
+# ("Data de Nascimento:\nMedico:\nNOME\n13/06/1976 Ficha:").
+BIRTH_LABEL_RE = re.compile(r"(?:\bd\.?\s*n\.?\s*:|data\s+de\s+nascimento|nascimento\s*:)", re.IGNORECASE)
 
 
 def _parse_br_date(text: str) -> str | None:
@@ -158,16 +163,32 @@ def first_date(text: str, filename: str) -> str | None:
         parsed = _parse_br_date(labeled.group(1))
         if parsed:
             return parsed
+    liberado = RELEASE_DATE_RE.search(head)
+    if liberado:
+        parsed = _parse_br_date(liberado.group(1))
+        if parsed:
+            return parsed
     name_match = re.search(r"((?:19|20)\d{2})[-_](\d{2})[-_](\d{2})", filename)
     if name_match:
         return "-".join(name_match.groups())
     # Ultimo recurso: primeira data solta, ignorando a de nascimento (que costuma vir antes).
     sem_nascimento = BIRTH_DATE_RE.sub("", head)
+    nascimentos = datas_de_nascimento(head)
     for raw in DATE_RE.findall(sem_nascimento):
         parsed = _parse_br_date(raw)
-        if parsed:
+        if parsed and parsed not in nascimentos:
             return parsed
     return None
+
+
+def datas_de_nascimento(text: str) -> set[str]:
+    """Primeira data que aparece ate 150 caracteres depois de um rotulo de nascimento."""
+    datas = set()
+    for m in BIRTH_LABEL_RE.finditer(text):
+        d = DATE_RE.search(text, m.end(), m.end() + 150)
+        if d and (parsed := _parse_br_date(d.group(1) if d.groups() else d.group(0))):
+            datas.add(parsed)
+    return datas
 
 
 IMAGE_TOKENS = {"rm", "rnm", "rx", "tc", "usg", "tomo", "eco", "doppler"}

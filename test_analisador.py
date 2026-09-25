@@ -231,6 +231,71 @@ class AchadosTests(unittest.TestCase):
 
 
 
+class LaudoBilateralTests(unittest.TestCase):
+    """Doppler das duas pernas: uma conclusao por lado, data so na liberacao."""
+    LADO = (
+        "DOPPLER VENOSO DO MEMBRO\nINFERIOR {lado}\n \nSISTEMA VENOSO PROFUNDO\n"
+        "Veias femorais pervias, sem sinais de trombose.\n \nCONCLUSÃO\n{conclusao}\n \n"
+    )
+    RODAPE = ("Cliente:\nData de Nascimento:\nMédico:\nPACIENTE TESTE\n01/02/1970 Ficha:\n"
+              "Data da Ficha:\n123\n19/12/2025\n")
+    TEXTO = (
+        "ULTRASSOM MEMBRO INFERIOR C/ DOPPLER COLORIDO VENOSO\n"
+        + LADO.format(lado="DIREITO", conclusao="- Veias reticulares sem relacao com veias perfurantes insuficientes identificaveis.")
+        + LADO.format(lado="ESQUERDO", conclusao="- Discreta insuficiência da veia safena magna na perna.")
+        + "Laudado por: CRM 1/SC - DR. TESTE\nLIBERADO EM: 19/12/2025 09:58\n" + RODAPE
+    )
+
+    def test_data_de_liberacao_e_nao_nascimento(self):
+        self.assertEqual(A.first_date(self.TEXTO, "Resultado-Laudo-123.pdf"), "2025-12-19")
+
+    def test_data_solta_ignora_nascimento_longe_do_rotulo(self):
+        self.assertEqual(A.first_date(self.RODAPE, "x.pdf"), "2025-12-19")
+
+    def test_um_achado_por_lado(self):
+        achados = extrair_achados("x.pdf", "2025-12-19", self.TEXTO)
+        self.assertEqual([(a.regiao, a.lado, a.termos) for a in achados], [
+            ("membros_inferiores", "direito", []),
+            ("membros_inferiores", "esquerdo", ["insuficiencia_venosa"]),
+        ])
+        self.assertIn("safena", achados[1].trecho)
+        self.assertNotIn("safena", achados[0].trecho)
+
+    def test_pdf_repetido_nao_duplica_lados(self):
+        achados = extrair_achados("x.pdf", None, self.TEXTO + self.TEXTO)
+        self.assertEqual([a.lado for a in achados], ["direito", "esquerdo"])
+
+    def test_laudo_de_um_lado_so_segue_igual(self):
+        (a,) = extrair_achados("x.pdf", None, "RM DO JOELHO ESQUERDO\nCONCLUSAO: lesao do menisco medial.")
+        self.assertEqual((a.regiao, a.lado), ("joelho", "esquerdo"))
+
+
+class AuditoriaTests(unittest.TestCase):
+    def test_aponta_data_de_nascimento_regiao_e_lado(self):
+        import auditar_laudos
+        payload = {
+            "arquivos": [
+                {"arquivo": "doppler.pdf", "data": "1976-06-13", "tipo": "imagem", "texto_extraido": True},
+                {"arquivo": "sangue.pdf", "data": "2025-01-02", "tipo": "laboratorial", "texto_extraido": True},
+                {"arquivo": "escaneado.pdf", "data": None, "tipo": "laboratorial", "texto_extraido": False},
+                {"arquivo": "ok.pdf", "data": "2025-03-04", "tipo": "imagem", "texto_extraido": True},
+            ],
+            "resultados": [],
+            "achados": [
+                {"arquivo": "doppler.pdf", "data": "1976-06-13", "modalidade": "ultrassom", "regiao": "outros", "lado": "", "trecho": "x" * 40},
+                {"arquivo": "ok.pdf", "data": "2025-03-04", "modalidade": "ressonancia", "regiao": "joelho", "lado": "direito", "trecho": "x" * 40},
+            ],
+        }
+        problemas = auditar_laudos.auditar(payload, hoje="2026-01-01")
+        por_arquivo = {a for a, _ in problemas}
+        self.assertEqual(por_arquivo, {"doppler.pdf", "sangue.pdf", "escaneado.pdf"})
+        textos = " ".join(p for _, p in problemas)
+        self.assertIn("data de nascimento", textos)
+        self.assertIn("Outras regioes", textos)
+        self.assertIn("sem nenhum resultado", textos)
+        self.assertIn("OCR", textos)
+
+
 class MapaOutrosTests(unittest.TestCase):
     """Exames que antes caiam em "Outros" e agora vao para o orgao certo."""
 
