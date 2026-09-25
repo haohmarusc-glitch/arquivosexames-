@@ -1118,3 +1118,34 @@ class ConflitosNaSerieTests(unittest.TestCase):
             finally:
                 os.environ.pop("ANALISADOR_RESULT_DIR", None)
                 importlib.reload(api)
+
+
+@unittest.skipUnless(shutil.which("node"), "precisa do node para rodar o patologias.ts")
+class PatologiasDetalheTests(unittest.TestCase):
+    """Patologia desenhada na imagem de detalhe: termo, nivel e lado da MESMA frase do laudo."""
+
+    def _ler(self, trecho):
+        import json as _json
+        import subprocess
+        js = ("import('./frontend/src/patologias.ts').then(m => console.log(JSON.stringify(m.patologiasDoTrecho("
+              + _json.dumps(trecho) + "))))")
+        out = subprocess.run(["node", "--experimental-strip-types", "--no-warnings", "-e", js], cwd=Path(__file__).parent,
+                             capture_output=True, text=True, timeout=30, check=False)
+        if out.returncode != 0:
+            self.skipTest(f"node sem suporte a .ts: {out.stderr[:200]}")
+        return [(p["nivel"], p["tipo"], p["lado"]) for p in _json.loads(out.stdout)]
+
+    def test_hernia_so_no_nivel_da_frase_e_com_lado(self):
+        r = self._ler("1. Hérnia discal póstero-latero foraminal esquerda em C6-C7 e cujas demais alterações. "
+                      "2. Discopatia degenerativa em C3-C4, C4-C5 e C5-C6. 3. Uncoartrose em C7-T1.")
+        self.assertIn(("C6-C7", "hernia", "esquerdo"), r)
+        self.assertNotIn("hernia", {t for n, t, _ in r if n != "C6-C7"})
+        self.assertIn(("C7-T1", "degenerativo", "central"), r)
+
+    def test_negacao_e_lado(self):
+        self.assertEqual(self._ler("Sem hérnias discais. Protrusão discal difusa em L4-L5."), [("L4-L5", "protrusao", "central")])
+        self.assertEqual(self._ler("Abaulamento discal em L5-S1 tocando a raiz à direita."), [("L5-S1", "protrusao", "direito")])
+        self.assertEqual(self._ler("Não há hérnia em C5-C6; estenose foraminal bilateral em C5/C6."), [("C5-C6", "estenose", "bilateral")])
+
+    def test_sem_nivel_na_frase_nao_marca(self):
+        self.assertEqual(self._ler("Hérnia discal. Espondilose difusa."), [])

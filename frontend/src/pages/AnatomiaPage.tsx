@@ -6,6 +6,7 @@ import { GraficoMarcador } from '../components/GraficoMarcador'
 import { Aviso, Painel } from '../components/Painel'
 import { fmtData, fmtNum, fmtReferencia } from '../format'
 import { href } from '../rota'
+import { DISCOS_DETALHE, NOME_PATOLOGIA, patologiasDoTrecho, type Patologia, type TipoPatologia } from '../patologias'
 
 type Vista = 'orgaos' | 'coluna'
 
@@ -223,10 +224,7 @@ export function PainelColuna({ achados, selecionado, onSelecionar }: { achados: 
       {visiveis.map(([r, lista]) => (
         <Painel key={r} titulo={REGIOES[r] ?? r}>
           <div className={DETALHE_REGIAO[r] ? 'flex flex-col gap-4 sm:flex-row sm:items-start' : undefined}>
-            {DETALHE_REGIAO[r] && (
-              <img src={DETALHE_REGIAO[r].src} alt={DETALHE_REGIAO[r].alt}
-                className="w-full max-w-[200px] shrink-0 self-center rounded-xl border border-line sm:self-start" />
-            )}
+            {DETALHE_REGIAO[r] && <DetalheComPatologias regiao={r} achados={lista} />}
             <div className="min-w-0 flex-1">
               {lista.length === 0 ? (
                 <p className="text-sm text-muted">Nenhum achado registrado nesta região.</p>
@@ -284,3 +282,90 @@ function ItemAchado({ achado: a }: { achado: Achado }) {
     </li>
   )
 }
+
+/* ------------------------------------------- Patologias na imagem de detalhe */
+
+const ESTILO_PATOLOGIA: Record<TipoPatologia, { cor: string; w: number; h: number; forma: 'blob' | 'anel' | 'ponto' }> = {
+  hernia: { cor: '#d9480f', w: 11, h: 5, forma: 'blob' },
+  protrusao: { cor: '#f08c00', w: 8, h: 4, forma: 'blob' },
+  estenose: { cor: '#7048e8', w: 9, h: 5, forma: 'anel' },
+  listese: { cor: '#1c7ed6', w: 9, h: 5, forma: 'anel' },
+  artrodese: { cor: '#495057', w: 10, h: 5, forma: 'anel' },
+  degenerativo: { cor: '#795548', w: 4.2, h: 4.2, forma: 'ponto' },
+}
+
+interface Marca extends Patologia { data: string | null; historico: boolean }
+
+/** Patologias de todos os laudos da regiao; mesma (nivel, tipo, lado) fica so a mais recente. */
+function marcasDaRegiao(regiao: string, achados: Achado[]): Marca[] {
+  const discos = DISCOS_DETALHE[regiao]
+  if (!discos) return []
+  const porChave = new Map<string, Marca>()
+  for (const a of [...achados].sort((x, y) => (x.data ?? '').localeCompare(y.data ?? ''))) {
+    for (const p of patologiasDoTrecho(a.trecho ?? '')) {
+      if (!discos[p.nivel]) continue
+      porChave.set(`${p.nivel}|${p.tipo}|${p.lado}`, { ...p, data: a.data, historico: (a.niveis_historicos ?? []).includes(p.nivel) })
+    }
+  }
+  // Pontos "degenerativo" so onde nao ha outra patologia no mesmo nivel.
+  const marcas = [...porChave.values()]
+  return marcas.filter((m) => m.tipo !== 'degenerativo' || !marcas.some((o) => o.nivel === m.nivel && o.tipo !== 'degenerativo'))
+}
+
+function DetalheComPatologias({ regiao, achados }: { regiao: string; achados: Achado[] }) {
+  const img = DETALHE_REGIAO[regiao]
+  const marcas = useMemo(() => marcasDaRegiao(regiao, achados), [regiao, achados])
+  const discos = DISCOS_DETALHE[regiao]
+  const tipos = [...new Set(marcas.map((m) => m.tipo))]
+  const pontos = marcas.flatMap((m) => {
+    const d = discos[m.nivel]
+    const xs = m.lado === 'bilateral' ? [d.xE, d.xD] : m.lado === 'esquerdo' ? [d.xE] : m.lado === 'direito' ? [d.xD] : [d.xC]
+    return xs.map((x, i) => ({ ...m, x, y: d.y, rotulo: i === 0 }))
+  })
+  return (
+    <figure className="w-full max-w-[260px] shrink-0 self-center sm:self-start">
+      <div className="relative overflow-hidden rounded-xl border border-line">
+        <img src={img.src} alt={img.alt} className="block w-full" />
+        {pontos.map((p, i) => {
+          const e = ESTILO_PATOLOGIA[p.tipo]
+          const direita = p.x >= 50
+          return (
+            <div key={i} className="pointer-events-none absolute" style={{ left: `${p.x}%`, top: `${p.y}%`, opacity: p.historico ? 0.45 : 1 }}
+              title={`${NOME_PATOLOGIA[p.tipo]} ${p.nivel}${p.lado !== 'central' ? `, ${p.lado}` : ''}`}>
+              <span
+                className="absolute block -translate-x-1/2 -translate-y-1/2"
+                style={{
+                  width: `${(e.w / 100) * 260}px`, height: `${(e.h / 100) * 260}px`, borderRadius: '9999px',
+                  background: e.forma === 'anel' ? 'transparent' : e.cor,
+                  border: e.forma === 'anel' ? `2.5px solid ${e.cor}` : '1.5px solid #fff',
+                  boxShadow: e.forma === 'blob' ? `0 0 0 3px ${e.cor}55` : undefined,
+                  borderStyle: p.historico ? 'dashed' : 'solid',
+                }}
+              />
+              {p.rotulo && p.tipo !== 'degenerativo' && (
+                <span className={`absolute top-0 -translate-y-1/2 rounded bg-white/90 px-1 text-[10px] font-bold whitespace-nowrap shadow-sm ${direita ? 'left-3' : 'right-3'}`}
+                  style={{ color: e.cor }}>
+                  {p.nivel}
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {tipos.length > 0 && (
+        <figcaption className="mt-2 space-y-1 text-xs text-muted">
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            {tipos.map((t) => (
+              <span key={t} className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: ESTILO_PATOLOGIA[t].forma === 'anel' ? 'transparent' : ESTILO_PATOLOGIA[t].cor, border: `2px solid ${ESTILO_PATOLOGIA[t].cor}` }} />
+                {NOME_PATOLOGIA[t]}
+              </span>
+            ))}
+          </div>
+          <p>Ilustrativo: nível e lado tirados do texto do laudo; posição aproximada, vista de costas (esquerda da pessoa à esquerda).</p>
+        </figcaption>
+      )}
+    </figure>
+  )
+}
+
