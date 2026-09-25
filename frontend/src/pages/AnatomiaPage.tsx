@@ -6,6 +6,7 @@ import { GraficoMarcador } from '../components/GraficoMarcador'
 import { Aviso, Painel } from '../components/Painel'
 import { fmtData, fmtNum, fmtReferencia } from '../format'
 import { href } from '../rota'
+import { ALTURA_PERNAS, COR_VEIA, NOME_VEIA, marcasDasPernas, trajeto, trechoDoTrajeto } from '../veias'
 import { COR_PATOLOGIA, DISCOS_DETALHE, GRAVIDADE, NOME_PATOLOGIA, PEDICULOS_DETALHE, faixasArtrodese, marcasDosAchados, vertebraDetalhe, vertebrasDaFaixa } from '../patologias'
 
 type Vista = 'orgaos' | 'coluna'
@@ -192,6 +193,7 @@ export const DETALHE_REGIAO: Record<string, { src: string; alt: string }> = {
   cervical: { src: '/anatomia/costas/coluna-cervical-detalhe.webp', alt: 'Ampliação didática da coluna cervical' },
   lombar: { src: '/anatomia/costas/coluna-lombossacra-detalhe.webp', alt: 'Ampliação didática da coluna lombossacra' },
   renal: { src: '/anatomia/costas/rins-corte-calculos.webp', alt: 'Ilustração esquemática de rins em corte com cálculos' },
+  membros_inferiores: { src: '/anatomia/pernas-veias-detalhe.webp', alt: 'Ilustração das veias das pernas, vista de frente' },
 }
 
 export function PainelColuna({ achados, selecionado, onSelecionar }: { achados: Achado[]; selecionado: string | null; onSelecionar: (r: string | null) => void }) {
@@ -224,7 +226,7 @@ export function PainelColuna({ achados, selecionado, onSelecionar }: { achados: 
       {visiveis.map(([r, lista]) => (
         <Painel key={r} titulo={REGIOES[r] ?? r}>
           <div className={DETALHE_REGIAO[r] ? 'flex flex-col gap-4 sm:flex-row sm:items-start' : undefined}>
-            {DETALHE_REGIAO[r] && <DetalheComPatologias regiao={r} achados={lista} />}
+            {DETALHE_REGIAO[r] && (r === 'membros_inferiores' ? <DetalhePernas achados={lista} /> : <DetalheComPatologias regiao={r} achados={lista} />)}
             <div className="min-w-0 flex-1">
               {lista.length === 0 ? (
                 <p className="text-sm text-muted">Nenhum achado registrado nesta região.</p>
@@ -376,6 +378,56 @@ function DetalheComPatologias({ regiao, achados }: { regiao: string; achados: Ac
           <p>Ilustrativo: mostra só o laudo mais recente desta região (o que melhorou não aparece); nível e lado tirados do texto; posição aproximada, vista de costas (esquerda da pessoa à esquerda).</p>
         </figcaption>
       )}
+    </figure>
+  )
+}
+
+function DetalhePernas({ achados }: { achados: Achado[] }) {
+  const img = DETALHE_REGIAO.membros_inferiores
+  const marcas = useMemo(() => marcasDasPernas(achados), [achados])
+  const tipos = (['trombose', 'insuficiencia'] as const).filter((t) => marcas.some((m) => m.tipo === t))
+  const ladosComLaudo = new Set(achados.flatMap((a) => (a.lado === 'bilateral' || !a.lado ? ['direito', 'esquerdo'] : [a.lado])))
+  const pontos = (ps: [number, number][]) => ps.map(([x, y]) => `${x},${y}`).join(' ')
+
+  return (
+    <figure className="w-full max-w-[220px] shrink-0 self-center sm:self-start">
+      <div className="relative overflow-hidden rounded-xl border border-line bg-white">
+        <img src={img.src} alt={img.alt} className="block w-full" />
+        <svg viewBox={`0 0 100 ${ALTURA_PERNAS}`} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
+          {marcas.map((m, i) => {
+            const ps = trechoDoTrajeto(trajeto(m.lado), m.faixa)
+            const cor = COR_VEIA[m.tipo]
+            const meio = ps[Math.floor(ps.length / 2)]
+            // Vista de FRENTE: perna direita da pessoa a esquerda da tela; etiqueta do lado de fora.
+            const fora = m.lado === 'direito'
+            return (
+              <g key={i}>
+                <polyline points={pontos(ps)} fill="none" stroke={cor} strokeOpacity={0.3} strokeWidth={7} strokeLinecap="round" strokeLinejoin="round" />
+                <polyline points={pontos(ps)} fill="none" stroke={cor} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+                <Etiqueta x={fora ? 3 : 97} y={meio[1]} cor={cor} texto={m.tipo === 'trombose' ? 'Trombose' : 'Insuficiência'} fim={!fora} />
+              </g>
+            )
+          })}
+          {(['direito', 'esquerdo'] as const).filter((l) => ladosComLaudo.has(l) && !marcas.some((m) => m.lado === l)).map((l) => (
+            <Etiqueta key={l} x={l === 'direito' ? 3 : 97} y={60} cor="#2b8a3e" texto="normal" fim={l === 'esquerdo'} />
+          ))}
+          <Etiqueta x={3} y={8} cor="#495057" texto="D" />
+          <Etiqueta x={97} y={8} cor="#495057" texto="E" fim />
+        </svg>
+      </div>
+      <figcaption className="mt-2 space-y-1 text-xs text-muted">
+        {tipos.length > 0 && (
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            {tipos.map((t) => (
+              <span key={t} className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: COR_VEIA[t] }} />
+                {NOME_VEIA[t]}
+              </span>
+            ))}
+          </div>
+        )}
+        <p>Ilustrativo: mostra só o laudo mais recente de cada perna; trecho aproximado tirado da conclusão, desenhado no trajeto da safena magna. Vista de frente (perna direita à esquerda).</p>
+      </figcaption>
     </figure>
   )
 }

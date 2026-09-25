@@ -25,7 +25,7 @@ SECAO_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 FIM_SECAO_RE = re.compile(
-    r"\n\s*(?:dr\.?\s*\(?a?\)?\s|dra\.?\s|crm|m[ée]dico\s*:|m[ée]dico\s+respons|assinado|laudo\s+liberado|"
+    r"\n\s*(?:dr\.?\s*\(?a?\)?\s|dra\.?\s|crm|m[ée]dico\s*:|m[ée]dico\s+respons|assinado|laudo\s+liberado|laudado\s+por|liberado\s+em|"
     r"observa(?:c|ç)(?:a|ã)o|nota:|data\s+(?:do\s+)?laudo|nome\s*:|paciente\s+id)",
     re.IGNORECASE,
 )
@@ -190,6 +190,11 @@ def secoes_por_lado(texto: str) -> list[tuple[str, str]]:
         fim = titulos[i + 1].start() if i + 1 < len(titulos) else len(texto)
         lado = "direito" if m.group(1).startswith("DIREIT") else "esquerdo"
         corpo = texto[m.start():fim]
+        if i + 1 < len(titulos):  # tira o comeco do proximo titulo ("DOPPLER VENOSO DO MEMBRO")
+            linhas = corpo.rstrip().split("\n")
+            while len(linhas) > 1 and linhas[-1].strip() and not re.search(r"[a-zà-ÿ]", linhas[-1]):
+                linhas.pop()
+            corpo = "\n".join(linhas)
         # O PDF pode repetir o laudo (uma copia por assinatura): fica a primeira secao com conclusao.
         if lado not in secoes and SECAO_RE.search(corpo):
             secoes[lado] = corpo

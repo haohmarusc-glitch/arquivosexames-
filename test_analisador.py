@@ -260,6 +260,9 @@ class LaudoBilateralTests(unittest.TestCase):
         ])
         self.assertIn("safena", achados[1].trecho)
         self.assertNotIn("safena", achados[0].trecho)
+        for ac in achados:  # a conclusao nao leva o titulo do outro lado nem a assinatura
+            self.assertNotIn("DOPPLER", ac.trecho)
+            self.assertNotIn("Laudado", ac.trecho)
 
     def test_pdf_repetido_nao_duplica_lados(self):
         achados = extrair_achados("x.pdf", None, self.TEXTO + self.TEXTO)
@@ -268,6 +271,41 @@ class LaudoBilateralTests(unittest.TestCase):
     def test_laudo_de_um_lado_so_segue_igual(self):
         (a,) = extrair_achados("x.pdf", None, "RM DO JOELHO ESQUERDO\nCONCLUSAO: lesao do menisco medial.")
         self.assertEqual((a.regiao, a.lado), ("joelho", "esquerdo"))
+
+
+class VeiasDetalheTests(unittest.TestCase):
+    """frontend/src/veias.ts: trecho da perna a marcar na imagem de detalhe."""
+
+    def _rodar(self, expr: str):
+        import json as _json
+        import subprocess
+        js = "import('./frontend/src/veias.ts').then(m => console.log(JSON.stringify(" + expr + ")))"
+        out = subprocess.run(["node", "--experimental-strip-types", "--no-warnings", "-e", js], cwd=Path(__file__).parent,
+                             capture_output=True, text=True, timeout=30, check=False)
+        if out.returncode != 0:
+            self.skipTest(f"node sem suporte a .ts: {out.stderr[:200]}")
+        return _json.loads(out.stdout)
+
+    def test_local_citado_vira_faixa(self):
+        import json as _json
+        def faixa(t):
+            return [(m["tipo"], m["faixa"]) for m in self._rodar(f"m.marcasDoTrecho({_json.dumps(t)}, 'esquerdo')")]
+        self.assertEqual(faixa("Discreta insuficiência da veia safena magna na perna."), [("insuficiencia", [94, 178])])
+        self.assertEqual(faixa("Insuficiência no terço distal da perna."), [("insuficiencia", [148, 178])])
+        self.assertEqual(faixa("Trombose venosa."), [("trombose", [18, 178])])
+        self.assertEqual(faixa("Sem sinais de trombose venosa profunda."), [])
+        self.assertEqual(faixa("Veias reticulares, sem relação com as safenas ou com veias perfurantes insuficientes identificáveis."), [])
+
+    def test_so_o_laudo_mais_recente_de_cada_perna(self):
+        achados = [
+            {"data": "2024-01-01", "lado": "direito", "regiao": "membros_inferiores", "termos": ["trombose"], "trecho": "Trombose na coxa."},
+            {"data": "2025-12-19", "lado": "direito", "regiao": "membros_inferiores", "termos": [], "trecho": "Pérvias e competentes."},
+            {"data": "2025-12-19", "lado": "esquerdo", "regiao": "membros_inferiores", "termos": ["insuficiencia_venosa"],
+             "trecho": "Discreta insuficiência da veia safena magna na perna."},
+        ]
+        import json as _json
+        r = self._rodar(f"m.marcasDasPernas({_json.dumps(achados)})")
+        self.assertEqual([(m["lado"], m["tipo"]) for m in r], [("esquerdo", "insuficiencia")])
 
 
 class AuditoriaTests(unittest.TestCase):
