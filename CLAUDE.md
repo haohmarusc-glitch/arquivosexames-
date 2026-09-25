@@ -175,3 +175,9 @@ cd frontend && npm run build && cd ..
   Pagina `#/imprimir?estudo=` (menu some com `print:hidden`).
 - `importar_imagens.py` pula DICOMDIR (indice do CD) — enviar ao Orthanc dava
   404 "Inexistent tag".
+
+## Data do laudo e laudos bilaterais
+- `first_date`: data rotulada (exame/coleta/atendimento) > "LIBERADO EM:" > data no nome do arquivo > primeira data solta. Nas datas soltas, ignora a que vem ate 150 caracteres depois de um rotulo de nascimento (o rotulo pode estar separado da data por outras linhas do cabecalho).
+- `achados.secoes_por_lado`: laudo com titulos "... DIREITO" e "... ESQUERDO" sozinhos na linha, cada um com sua conclusao (ex.: Doppler das duas pernas), vira um achado por lado. PDF repetido nao duplica.
+- Regiao `membros_inferiores` (safena, varizes, membro inferior) e termos `insuficiencia_venosa`/`trombose`.
+- `auditar_laudos.py resultados.json` lista arquivos com data suspeita, sem texto, regiao "outros", articulacao sem lado, etc. Imprime so nome do arquivo e o motivo.
