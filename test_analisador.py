@@ -1149,3 +1149,14 @@ class PatologiasDetalheTests(unittest.TestCase):
 
     def test_sem_nivel_na_frase_nao_marca(self):
         self.assertEqual(self._ler("Hérnia discal. Espondilose difusa."), [])
+
+    def test_artrodese_em_faixa_vira_todos_os_discos(self):
+        esperado = [("L4-L5", "artrodese", "bilateral"), ("L5-S1", "artrodese", "bilateral")]
+        self.assertEqual(self._ler("Status pós-operatório de artrodese L4-S1 com parafusos pediculares."), esperado)
+        self.assertEqual(self._ler("Parafusos pediculares em L4, L5 e S1, sem sinais de soltura."), esperado)
+        self.assertEqual(self._ler("Artrodese de L3 a L5 com espaçador intersomático."),
+                         [("L3-L4", "artrodese", "bilateral"), ("L4-L5", "artrodese", "bilateral")])
+        self.assertEqual(self._ler("Sem sinais de artrodese em L4-L5."), [])
+
+    def test_fratura_marca_a_vertebra(self):
+        self.assertEqual(self._ler("Fratura com achatamento do corpo vertebral de T12."), [("T12", "fratura", "central")])

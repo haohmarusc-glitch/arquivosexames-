@@ -6,7 +6,7 @@ import { GraficoMarcador } from '../components/GraficoMarcador'
 import { Aviso, Painel } from '../components/Painel'
 import { fmtData, fmtNum, fmtReferencia } from '../format'
 import { href } from '../rota'
-import { DISCOS_DETALHE, NOME_PATOLOGIA, patologiasDoTrecho, type Patologia, type TipoPatologia } from '../patologias'
+import { COR_PATOLOGIA, DISCOS_DETALHE, GRAVIDADE, NOME_PATOLOGIA, PEDICULOS_DETALHE, faixasArtrodese, marcasDosAchados, vertebraDetalhe, vertebrasDaFaixa } from '../patologias'
 
 type Vista = 'orgaos' | 'coluna'
 
@@ -285,79 +285,90 @@ function ItemAchado({ achado: a }: { achado: Achado }) {
 
 /* ------------------------------------------- Patologias na imagem de detalhe */
 
-const ESTILO_PATOLOGIA: Record<TipoPatologia, { cor: string; w: number; h: number; forma: 'blob' | 'anel' | 'ponto' }> = {
-  hernia: { cor: '#d9480f', w: 11, h: 5, forma: 'blob' },
-  protrusao: { cor: '#f08c00', w: 8, h: 4, forma: 'blob' },
-  estenose: { cor: '#7048e8', w: 9, h: 5, forma: 'anel' },
-  listese: { cor: '#1c7ed6', w: 9, h: 5, forma: 'anel' },
-  artrodese: { cor: '#495057', w: 10, h: 5, forma: 'anel' },
-  degenerativo: { cor: '#795548', w: 4.2, h: 4.2, forma: 'ponto' },
-}
-
-interface Marca extends Patologia { data: string | null; historico: boolean }
-
-/** Patologias de todos os laudos da regiao; mesma (nivel, tipo, lado) fica so a mais recente. */
-function marcasDaRegiao(regiao: string, achados: Achado[]): Marca[] {
-  const discos = DISCOS_DETALHE[regiao]
-  if (!discos) return []
-  const porChave = new Map<string, Marca>()
-  for (const a of [...achados].sort((x, y) => (x.data ?? '').localeCompare(y.data ?? ''))) {
-    for (const p of patologiasDoTrecho(a.trecho ?? '')) {
-      if (!discos[p.nivel]) continue
-      porChave.set(`${p.nivel}|${p.tipo}|${p.lado}`, { ...p, data: a.data, historico: (a.niveis_historicos ?? []).includes(p.nivel) })
-    }
-  }
-  // Pontos "degenerativo" so onde nao ha outra patologia no mesmo nivel.
-  const marcas = [...porChave.values()]
-  return marcas.filter((m) => m.tipo !== 'degenerativo' || !marcas.some((o) => o.nivel === m.nivel && o.tipo !== 'degenerativo'))
-}
+// Proporcao altura/largura das imagens de detalhe (para desenhar sem distorcer).
+const PROPORCAO_DETALHE: Record<string, number> = { cervical: 1364 / 900, lombar: 1536 / 829 }
 
 function DetalheComPatologias({ regiao, achados }: { regiao: string; achados: Achado[] }) {
   const img = DETALHE_REGIAO[regiao]
-  const marcas = useMemo(() => marcasDaRegiao(regiao, achados), [regiao, achados])
   const discos = DISCOS_DETALHE[regiao]
-  const tipos = [...new Set(marcas.map((m) => m.tipo))]
-  const pontos = marcas.flatMap((m) => {
-    const d = discos[m.nivel]
-    const xs = m.lado === 'bilateral' ? [d.xE, d.xD] : m.lado === 'esquerdo' ? [d.xE] : m.lado === 'direito' ? [d.xD] : [d.xC]
-    return xs.map((x, i) => ({ ...m, x, y: d.y, rotulo: i === 0 }))
-  })
+  const alt = 100 * (PROPORCAO_DETALHE[regiao] ?? 1)
+  const marcas = useMemo(
+    () => marcasDosAchados(achados).filter((m) => (m.tipo === 'fratura' ? vertebraDetalhe(regiao, m.nivel) : discos?.[m.nivel])),
+    [achados, regiao, discos],
+  )
+  const faixas = faixasArtrodese(marcas)
+  const tipos = GRAVIDADE.filter((t) => marcas.some((m) => m.tipo === t))
+  const Y = (pct: number) => (pct / 100) * alt
+  // Vista de COSTAS: esquerda da pessoa = esquerda da tela.
+  const xs = (d: { xE: number; xD: number; xC: number }, lado: string) =>
+    lado === 'bilateral' ? [d.xE, d.xD] : lado === 'esquerdo' ? [d.xE] : lado === 'direito' ? [d.xD] : [d.xC]
+
   return (
     <figure className="w-full max-w-[260px] shrink-0 self-center sm:self-start">
       <div className="relative overflow-hidden rounded-xl border border-line">
         <img src={img.src} alt={img.alt} className="block w-full" />
-        {pontos.map((p, i) => {
-          const e = ESTILO_PATOLOGIA[p.tipo]
-          const direita = p.x >= 50
-          return (
-            <div key={i} className="pointer-events-none absolute" style={{ left: `${p.x}%`, top: `${p.y}%`, opacity: p.historico ? 0.45 : 1 }}
-              title={`${NOME_PATOLOGIA[p.tipo]} ${p.nivel}${p.lado !== 'central' ? `, ${p.lado}` : ''}`}>
-              <span
-                className="absolute block -translate-x-1/2 -translate-y-1/2"
-                style={{
-                  width: `${(e.w / 100) * 260}px`, height: `${(e.h / 100) * 260}px`, borderRadius: '9999px',
-                  background: e.forma === 'anel' ? 'transparent' : e.cor,
-                  border: e.forma === 'anel' ? `2.5px solid ${e.cor}` : '1.5px solid #fff',
-                  boxShadow: e.forma === 'blob' ? `0 0 0 3px ${e.cor}55` : undefined,
-                  borderStyle: p.historico ? 'dashed' : 'solid',
-                }}
-              />
-              {p.rotulo && p.tipo !== 'degenerativo' && (
-                <span className={`absolute top-0 -translate-y-1/2 rounded bg-white/90 px-1 text-[10px] font-bold whitespace-nowrap shadow-sm ${direita ? 'left-3' : 'right-3'}`}
-                  style={{ color: e.cor }}>
-                  {p.nivel}
-                </span>
-              )}
-            </div>
-          )
-        })}
+        {discos && marcas.length > 0 && (
+          <svg viewBox={`0 0 100 ${alt}`} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
+            {/* artrodese: hastes dos dois lados e um parafuso por vertebra */}
+            {faixas.map((f) => {
+              const vs = vertebrasDaFaixa(f).map((v) => vertebraDetalhe(regiao, v)).filter((v): v is NonNullable<typeof v> => v != null)
+              const ped = PEDICULOS_DETALHE[regiao]
+              if (vs.length < 2 || !ped) return null
+              return (
+                <g key={f.join()}>
+                  {[ped.xE, ped.xD].map((x) => (
+                    <g key={x}>
+                      <line x1={x} x2={x} y1={Y(vs[0].y)} y2={Y(vs[vs.length - 1].y)} stroke={COR_PATOLOGIA.artrodese} strokeWidth={2.2} strokeLinecap="round" />
+                      {vs.map((v, i) => <circle key={i} cx={x} cy={Y(v.y)} r={2.4} fill="#ced4da" stroke={COR_PATOLOGIA.artrodese} strokeWidth={1} />)}
+                    </g>
+                  ))}
+                  <Etiqueta x={ped.xD + 4} y={Y(vs[0].y)} cor={COR_PATOLOGIA.artrodese} texto={`${vertebrasDaFaixa(f)[0]}–${vertebrasDaFaixa(f).slice(-1)[0]}`} />
+                </g>
+              )
+            })}
+            {marcas.map((m, i) => {
+              if (m.tipo === 'artrodese') return null
+              const cor = COR_PATOLOGIA[m.tipo]
+              const op = m.historico ? 0.45 : 1
+              if (m.tipo === 'fratura') {
+                const v = vertebraDetalhe(regiao, m.nivel)!
+                return (
+                  <g key={i} opacity={op}>
+                    <path d={`M${v.xC - 7},${Y(v.y) - 1.5} l3.5,3 l3.5,-3 l3.5,3 l3.5,-3`} fill="none" stroke={cor} strokeWidth={1.8} />
+                    <Etiqueta x={v.xC + 9} y={Y(v.y)} cor={cor} texto={m.nivel} />
+                  </g>
+                )
+              }
+              const d = discos[m.nivel]
+              if (m.tipo === 'degenerativo') return <circle key={i} cx={d.xC} cy={Y(d.y)} r={1.8} fill={cor} stroke="#fff" strokeWidth={0.6} opacity={op} />
+              if (m.tipo === 'estenose' || m.tipo === 'listese') {
+                return (
+                  <g key={i} opacity={op}>
+                    <ellipse cx={d.xC} cy={Y(d.y)} rx={6} ry={3} fill="none" stroke={cor} strokeWidth={1.6} />
+                    <Etiqueta x={d.xC + 8} y={Y(d.y)} cor={cor} texto={m.nivel} />
+                  </g>
+                )
+              }
+              const [rx, ry] = m.tipo === 'hernia' ? [5.5, 2.6] : [4, 2]
+              const pos = xs(d, m.lado)
+              return (
+                <g key={i} opacity={op}>
+                  {pos.map((x, k) => (
+                    <ellipse key={k} cx={x} cy={Y(d.y)} rx={rx} ry={ry} fill={cor} stroke="#fff" strokeWidth={0.7} />
+                  ))}
+                  <Etiqueta x={pos[0] < 50 ? pos[0] - rx - 1 : pos[pos.length - 1] + rx + 1} y={Y(d.y)} cor={cor} texto={m.nivel} fim={pos[0] < 50} />
+                </g>
+              )
+            })}
+          </svg>
+        )}
       </div>
       {tipos.length > 0 && (
         <figcaption className="mt-2 space-y-1 text-xs text-muted">
           <div className="flex flex-wrap gap-x-3 gap-y-1">
             {tipos.map((t) => (
               <span key={t} className="flex items-center gap-1.5">
-                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: ESTILO_PATOLOGIA[t].forma === 'anel' ? 'transparent' : ESTILO_PATOLOGIA[t].cor, border: `2px solid ${ESTILO_PATOLOGIA[t].cor}` }} />
+                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: t === 'estenose' || t === 'listese' ? 'transparent' : COR_PATOLOGIA[t], border: `2px solid ${COR_PATOLOGIA[t]}` }} />
                 {NOME_PATOLOGIA[t]}
               </span>
             ))}
@@ -369,3 +380,10 @@ function DetalheComPatologias({ regiao, achados }: { regiao: string; achados: Ac
   )
 }
 
+function Etiqueta({ x, y, cor, texto, fim = false }: { x: number; y: number; cor: string; texto: string; fim?: boolean }) {
+  return (
+    <text x={x} y={y + 1.8} textAnchor={fim ? 'end' : 'start'} fontSize={5} fontWeight={700} fill={cor} stroke="#fff" strokeWidth={1.4} paintOrder="stroke">
+      {texto}
+    </text>
+  )
+}

@@ -136,6 +136,18 @@ Roda no analisador E na API (sobre o JSON + envios), e idempotente:
   Rodar depois de recriar o container:
   `docker cp verificar_graficos.py saude-app:/tmp/ && docker exec saude-app python3 /tmp/verificar_graficos.py --base http://localhost:8502`
 
+## Patologias da coluna desenhadas (frontend/src/patologias.ts)
+- O achado traz niveis e termos separados; `patologiasDoTrecho` le o trecho do
+  laudo frase por frase e so marca quando termo e nivel estao na MESMA frase
+  (lado: esquerdo/direito/bilateral/central; negacao "sem hernias" ignorada).
+  Artrodese: faixa de vertebras ("L4-S1", "L4 a S1", "parafusos em L4, L5 e S1")
+  -> todos os discos da faixa. Fratura: a vertebra ("T12").
+- Figura da coluna (Anatomia.tsx `GlifosColuna`): de FRENTE o lado esquerdo da
+  pessoa fica a direita da tela; de COSTAS, a esquerda. Etiquetas empilhadas e
+  desenhadas por ultimo (por cima dos circulos dos ombros).
+- Imagens de detalhe (AnatomiaPage `DetalheComPatologias`): `DISCOS_DETALHE` e
+  `PEDICULOS_DETALHE` em % da imagem (vistas de costas).
+
 ## Testar antes de aplicar
 ```bash
 .venv/bin/python -m unittest
