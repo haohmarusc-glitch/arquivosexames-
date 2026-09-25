@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from 'react'
+import { ABREV_LADO, COR_PATOLOGIA, CURTO_PATOLOGIA, GRAVIDADE, faixasArtrodese, maisRecentesPorRegiao, marcasDosAchados, regiaoDoNivel, vertebrasDaFaixa, type MarcaPatologia } from '../patologias'
 import {
   AORTA_CAMADAS, CORPO, DECORATIVOS_COSTAS_CAMADAS, DECORATIVOS_FRENTE_CAMADAS, ORGAOS_COSTAS,
   ORGAOS_COSTAS_CAMADAS, ORGAOS_FRENTE, ORGAOS_FRENTE_CAMADAS, PULMOES_FRENTE,
@@ -402,6 +403,9 @@ export interface Marca {
   niveis_historicos?: string[]
   lado: string
   origem: string
+  data?: string | null
+  trecho?: string
+  termos?: string[]
 }
 
 interface PropsColuna {
@@ -415,7 +419,14 @@ const NOME_SEGMENTO: Record<string, string> = { cervical: 'Coluna cervical', tor
 
 export function FiguraColuna({ selecionado, marcas, onSelecionar, orientacao = 'frente' }: PropsColuna) {
   const regioesComAchado = new Set(marcas.map((m) => m.regiao))
-  const niveis = marcas.flatMap((m) => m.niveis.map((n) => ({ n, origem: m.origem, historico: (m.niveis_historicos ?? []).includes(n) })))
+  // Estado atual: em cada regiao da coluna, so o laudo mais recente dela.
+  const daColuna = marcas.filter((m) => REGIOES_COLUNA.includes(m.regiao))
+  const niveis = [...maisRecentesPorRegiao(daColuna)].flatMap(([regiao, doExame]) =>
+    doExame.flatMap((m) => m.niveis.filter((n) => regiaoDoNivel(n) === regiao).map((n) => ({ n, origem: m.origem, historico: (m.niveis_historicos ?? []).includes(n) }))),
+  )
+  const patologias = marcasDosAchados(daColuna)
+  const faixas = faixasArtrodese(patologias)
+  const rotulos = rotulosDaColuna(niveis, patologias, faixas)
   const ladosComAchado = (regiao: string) => {
     const ms = marcas.filter((m) => m.regiao === regiao)
     const lados = new Set<string>()
@@ -466,21 +477,8 @@ export function FiguraColuna({ selecionado, marcas, onSelecionar, orientacao = '
         NOME_SEGMENTO.sacral,
       )}
 
-      {/* marcadores nos níveis citados */}
-      {niveis.map(({ n, origem, historico }, i) => {
-        const y = yDoNivel(n)
-        if (y == null) return null
-        const cor = historico ? '#9aa7ab' : origem === 'manual' ? SELECAO : ALERTA
-        return (
-          <g key={`${n}-${i}`} pointerEvents="none" opacity={historico ? 0.7 : 1}>
-            <line x1={176} x2={206} y1={y} y2={y} stroke={cor} strokeWidth={1.2} strokeDasharray={historico ? '2 2' : undefined} />
-            <circle cx={160} cy={y} r={origem === 'manual' ? 4.2 : 3.6} fill={cor} stroke="#fff" strokeWidth={1.2} />
-            <text x={209} y={y + 3.5} fontSize={10} fontWeight={600} fill={historico ? '#5b7178' : '#17313a'}>
-              {n}{historico ? ' (ant.)' : ''}
-            </text>
-          </g>
-        )
-      })}
+      {/* patologias do laudo desenhadas na coluna (nivel e lado do texto) */}
+      <GlifosColuna patologias={patologias} faixas={faixas} orientacao={orientacao} />
 
       {ARTICULACOES.map((a) => {
         const ativo = selecionado === a.regiao
@@ -508,6 +506,162 @@ export function FiguraColuna({ selecionado, marcas, onSelecionar, orientacao = '
           </circle>
         )
       })}
+      {ARTICULACOES.map((a) => {
+        const termos = termosDaArticulacao(marcas, a.regiao, a.lado)
+        if (!termos.length) return null
+        const cx = orientacao === 'costas' ? a.costas.cx : a.cx
+        const cy = orientacao === 'costas' ? a.costas.cy : a.cy
+        // Abaixo do circulo: ao lado, colidiria com as etiquetas da coluna (ombros).
+        return (
+          <text key={`t-${a.regiao}-${a.lado}`} x={cx} y={cy + a.r + 8} textAnchor="middle"
+            fontSize={7.5} fontWeight={700} fill={ALERTA} stroke="#fff" strokeWidth={2.2} paintOrder="stroke" pointerEvents="none">
+            {termos.map((t) => TERMO_CURTO[t] ?? t).join(', ')}
+          </text>
+        )
+      })}
+      {/* por ultimo: etiquetas por cima dos circulos dos ombros; etiquetas dos niveis citados, empilhadas para nao se sobreporem */}
+      {rotulos.map((r) => (
+        <g key={r.chave} pointerEvents="none" opacity={r.historico ? 0.7 : 1}>
+          <polyline points={`176,${r.y} 196,${r.y} 204,${r.yRotulo}`} fill="none" stroke={r.cor} strokeWidth={1.1} strokeDasharray={r.historico ? '2 2' : undefined} />
+          <circle cx={160} cy={r.y} r={r.manual ? 4.2 : 3.6} fill={r.cor} stroke="#fff" strokeWidth={1.2} />
+          <text x={207} y={r.yRotulo + 3.5} fontSize={9.5} fontWeight={700} fill={r.historico ? '#5b7178' : '#17313a'} stroke="#fff" strokeWidth={2.4} paintOrder="stroke">
+            {r.nivel}
+            {r.extra && <tspan fontWeight={600} fontSize={8} fill={r.cor}>{` ${r.extra}`}</tspan>}
+            {r.historico && <tspan fontWeight={400} fontSize={8}> (ant.)</tspan>}
+          </text>
+        </g>
+      ))}
+
     </svg>
+  )
+}
+
+const REGIOES_COLUNA = ['cervical', 'toracica', 'lombar', 'sacral']
+
+// Nomes curtos dos termos (achados.py) para as etiquetas das articulacoes.
+const TERMO_CURTO: Record<string, string> = {
+  lesao: 'lesão', inflamatorio: 'inflamação', fratura: 'fratura', degenerativo: 'artrose', artrodese: 'fixação',
+  estenose: 'estenose', cisto: 'cisto', radicular: 'raiz', hernia: 'hérnia', protrusao: 'protrusão',
+}
+
+/** Termos do laudo MAIS RECENTE de uma articulacao, do lado dela
+ * ("bilateral"/sem lado vale para os dois): o que melhorou nao fica escrito. */
+function termosDaArticulacao(marcas: Marca[], regiao: string, lado: string): string[] {
+  const doLado = marcas.filter((m) => m.regiao === regiao && (!m.lado || m.lado === 'bilateral' || m.lado === lado))
+  const ultima = doLado.reduce((d, m) => ((m.data ?? '') > d ? (m.data ?? '') : d), '')
+  const out: string[] = []
+  for (const m of doLado) {
+    if ((m.data ?? '') !== ultima) continue
+    for (const t of m.termos ?? []) if (!out.includes(t)) out.push(t)
+  }
+  return out.slice(0, 2)
+}
+
+/** y de um nivel na figura: disco ("C6-C7") ou vertebra ("T12"); S1 = topo do sacro. */
+function yColuna(nivel: string): number | null {
+  if (nivel === 'S1') return TOPO_SACRO + 7
+  return yDoNivel(nivel)
+}
+const larguraVertebra = (v: string) => VERTEBRAS.find((x) => x.nome === v)?.w ?? 28
+
+interface Rotulo { chave: string; nivel: string; y: number; yRotulo: number; cor: string; extra: string; historico: boolean; manual: boolean }
+
+/** Uma etiqueta por nivel citado (ou com patologia); faixas de artrodese viram
+ * uma etiqueta so. Empilhadas com espaco minimo para nao se sobreporem. */
+function rotulosDaColuna(niveis: { n: string; origem: string; historico: boolean }[], patologias: MarcaPatologia[], faixas: string[][]): Rotulo[] {
+  const emFaixa = new Set(faixas.flat())
+  const porNivel = new Map<string, Rotulo>()
+  const principal = (n: string) => {
+    const ps = patologias.filter((p) => p.nivel === n && p.tipo !== 'artrodese')
+    return GRAVIDADE.map((t) => ps.find((p) => p.tipo === t)).find(Boolean)
+  }
+  const nivelAdd = (n: string, origem: string, historico: boolean) => {
+    const y = yColuna(n)
+    if (y == null) return
+    const p = principal(n)
+    if (!p && emFaixa.has(n)) return // so artrodese: fica na etiqueta da faixa
+    const atual = porNivel.get(n)
+    const cor = historico ? '#9aa7ab' : p ? COR_PATOLOGIA[p.tipo] : origem === 'manual' ? SELECAO : ALERTA
+    const extra = p ? [CURTO_PATOLOGIA[p.tipo], ABREV_LADO[p.lado]].filter(Boolean).join(' ') : ''
+    if (!atual || (atual.historico && !historico)) {
+      porNivel.set(n, { chave: n, nivel: n, y, yRotulo: y, cor, extra, historico, manual: origem === 'manual' })
+    }
+  }
+  niveis.forEach(({ n, origem, historico }) => nivelAdd(n, origem, historico))
+  patologias.filter((p) => p.tipo !== 'artrodese').forEach((p) => nivelAdd(p.nivel, 'laudo', p.historico))
+  const rotulos = [...porNivel.values()]
+  for (const f of faixas) {
+    const vs = vertebrasDaFaixa(f)
+    const y = yColuna(f[0])
+    if (y == null) continue
+    rotulos.push({ chave: `art-${f.join()}`, nivel: `${vs[0]}–${vs[vs.length - 1]}`, y, yRotulo: y, cor: COR_PATOLOGIA.artrodese, extra: 'artrodese', historico: false, manual: false })
+  }
+  rotulos.sort((a, b) => a.y - b.y)
+  let ultimo = -Infinity
+  for (const r of rotulos) {
+    r.yRotulo = Math.max(r.y, ultimo + 10.5)
+    ultimo = r.yRotulo
+  }
+  return rotulos
+}
+
+/** Desenho de cada patologia sobre a coluna. De FRENTE o lado esquerdo da
+ * pessoa fica a direita da tela; de COSTAS, a esquerda. */
+function GlifosColuna({ patologias, faixas, orientacao }: { patologias: MarcaPatologia[]; faixas: string[][]; orientacao: Orientacao }) {
+  const sinal = (lado: string) => (lado === 'esquerdo' ? 1 : -1) * (orientacao === 'costas' ? -1 : 1)
+  const lados = (lado: string) => (lado === 'bilateral' ? ['esquerdo', 'direito'] : lado === 'central' ? [] : [lado])
+  return (
+    <g pointerEvents="none">
+      {faixas.map((f) => {
+        const vs = vertebrasDaFaixa(f)
+        const ys = vs.map((v) => yColuna(v)).filter((y): y is number => y != null)
+        if (ys.length < 2) return null
+        const meia = Math.max(...vs.map(larguraVertebra)) / 2 + 2.5
+        return (
+          <g key={f.join()} opacity={0.95}>
+            {[-1, 1].map((sn) => (
+              <g key={sn}>
+                <line x1={160 + sn * meia} x2={160 + sn * meia} y1={ys[0]} y2={ys[ys.length - 1]} stroke={COR_PATOLOGIA.artrodese} strokeWidth={2.2} strokeLinecap="round" />
+                {ys.map((y, i) => (
+                  <g key={i}>
+                    <line x1={160 + sn * (meia - 5)} x2={160 + sn * meia} y1={y} y2={y} stroke={COR_PATOLOGIA.artrodese} strokeWidth={1.4} />
+                    <circle cx={160 + sn * meia} cy={y} r={2.1} fill="#ced4da" stroke={COR_PATOLOGIA.artrodese} strokeWidth={1} />
+                  </g>
+                ))}
+              </g>
+            ))}
+          </g>
+        )
+      })}
+      {patologias.map((p, i) => {
+        if (p.tipo === 'artrodese') return null
+        const y = yColuna(p.nivel)
+        if (y == null) return null
+        const cor = COR_PATOLOGIA[p.tipo]
+        const op = p.historico ? 0.45 : 1
+        const w = larguraVertebra(p.nivel.split('-')[0])
+        if (p.tipo === 'fratura') {
+          return (
+            <g key={i} opacity={op}>
+              <path d={`M${160 - w / 2 + 2},${y - 2.5} l4,4 l4,-4 l4,4 l4,-4`} transform={`translate(${w / 2 - 10},0)`} fill="none" stroke={cor} strokeWidth={1.6} />
+            </g>
+          )
+        }
+        if (p.tipo === 'estenose' || p.tipo === 'listese') {
+          return <ellipse key={i} cx={160} cy={y} rx={w / 2 + 2} ry={3.2} fill="none" stroke={cor} strokeWidth={1.4} opacity={op} />
+        }
+        if (p.tipo === 'degenerativo') return null // o ponto do nivel ja tem a cor
+        const [rx, ry] = p.tipo === 'hernia' ? [4.5, 2.6] : [3.5, 2]
+        const xs = lados(p.lado)
+        if (!xs.length) return <ellipse key={i} cx={160} cy={y + 2.5} rx={rx} ry={ry} fill={cor} stroke="#fff" strokeWidth={0.8} opacity={op} />
+        return (
+          <g key={i} opacity={op}>
+            {xs.map((l) => (
+              <ellipse key={l} cx={160 + sinal(l) * (w / 2 + rx - 1)} cy={y} rx={rx} ry={ry} fill={cor} stroke="#fff" strokeWidth={0.8} />
+            ))}
+          </g>
+        )
+      })}
+    </g>
   )
 }

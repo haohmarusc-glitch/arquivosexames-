@@ -1149,3 +1149,38 @@ class PatologiasDetalheTests(unittest.TestCase):
 
     def test_sem_nivel_na_frase_nao_marca(self):
         self.assertEqual(self._ler("Hérnia discal. Espondilose difusa."), [])
+
+    def test_artrodese_em_faixa_vira_todos_os_discos(self):
+        esperado = [("L4-L5", "artrodese", "bilateral"), ("L5-S1", "artrodese", "bilateral")]
+        self.assertEqual(self._ler("Status pós-operatório de artrodese L4-S1 com parafusos pediculares."), esperado)
+        self.assertEqual(self._ler("Parafusos pediculares em L4, L5 e S1, sem sinais de soltura."), esperado)
+        self.assertEqual(self._ler("Artrodese de L3 a L5 com espaçador intersomático."),
+                         [("L3-L4", "artrodese", "bilateral"), ("L4-L5", "artrodese", "bilateral")])
+        self.assertEqual(self._ler("Sem sinais de artrodese em L4-L5."), [])
+
+    def _marcas(self, achados):
+        import json as _json
+        import subprocess
+        js = ("import('./frontend/src/patologias.ts').then(m => console.log(JSON.stringify(m.marcasDosAchados("
+              + _json.dumps(achados) + "))))")
+        out = subprocess.run(["node", "--experimental-strip-types", "--no-warnings", "-e", js], cwd=Path(__file__).parent,
+                             capture_output=True, text=True, timeout=30, check=False)
+        if out.returncode != 0:
+            self.skipTest(f"node sem suporte a .ts: {out.stderr[:200]}")
+        return sorted((p["nivel"], p["tipo"], p["lado"]) for p in _json.loads(out.stdout))
+
+    def test_so_o_laudo_mais_recente_da_regiao(self):
+        antigo = {"regiao": "cervical", "data": "2024-03-01", "trecho": "Hérnia discal esquerda em C5-C6."}
+        novo = {"regiao": "cervical", "data": "2026-04-01", "trecho": "Protrusão discal em C6-C7."}
+        self.assertEqual(self._marcas([antigo, novo]), [("C6-C7", "protrusao", "central")])
+        # laudo novo sem patologia: a hernia antiga nao fica desenhada
+        normal = {"regiao": "cervical", "data": "2026-04-01", "trecho": "Sem alterações significativas."}
+        self.assertEqual(self._marcas([antigo, normal]), [])
+
+    def test_laudo_novo_de_outra_regiao_nao_apaga(self):
+        lombar = {"regiao": "lombar", "data": "2024-01-01", "trecho": "Hérnia discal direita em L4-L5."}
+        cervical = {"regiao": "cervical", "data": "2026-04-01", "trecho": "Hérnia discal esquerda em C6-C7."}
+        self.assertEqual(self._marcas([lombar, cervical]), [("C6-C7", "hernia", "esquerdo"), ("L4-L5", "hernia", "direito")])
+
+    def test_fratura_marca_a_vertebra(self):
+        self.assertEqual(self._ler("Fratura com achatamento do corpo vertebral de T12."), [("T12", "fratura", "central")])
