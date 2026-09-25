@@ -181,3 +181,5 @@ cd frontend && npm run build && cd ..
 - `achados.secoes_por_lado`: laudo com titulos "... DIREITO" e "... ESQUERDO" sozinhos na linha, cada um com sua conclusao (ex.: Doppler das duas pernas), vira um achado por lado. PDF repetido nao duplica.
 - Regiao `membros_inferiores` (safena, varizes, membro inferior) e termos `insuficiencia_venosa`/`trombose`.
 - `auditar_laudos.py resultados.json` lista arquivos com data suspeita, sem texto, regiao "outros", articulacao sem lado, etc. Imprime so nome do arquivo e o motivo.
+- Detalhe das pernas (`frontend/src/veias.ts` + `DetalhePernas` em AnatomiaPage): recorte `public/anatomia/pernas-veias-detalhe.webp` (sistema-venoso.webp, crop 160,790-540,1625; vista de FRENTE). Marca so tipos cujo termo o backend achou (`insuficiencia_venosa`, `trombose`), no trajeto aproximado da safena magna, na faixa citada na conclusao (coxa/perna/tercos/joelho/JSF; sem local = membro todo). So o laudo mais recente de cada perna.
+- Em laudos por lado, a conclusao de um lado nao leva o titulo em maiusculas do proximo lado; "Laudado por"/"Liberado em" encerram a conclusao.
